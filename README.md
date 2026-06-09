@@ -19,7 +19,6 @@ The **first frame** of each card animation, exported as WebP at **1920×1080**:
 | `cula_technologies_website_card_animation_03_unit_quality_management_1920px_1080px.webp` | Unit quality management |
 | `cula_technologies_website_card_animation_04_biochar_production_1920px_1080px.webp` | Biochar production |
 | `cula_technologies_website_card_animation_05_01_emissions_1920px_1080px.webp` | Emissions (01) |
-| `cula_technologies_website_card_animation_05_03_emissions_1920px_1080px.webp` | Emissions (03) |
 
 ## Export settings
 Encoded with `ffmpeg` (libwebp), quality 90, lossy.

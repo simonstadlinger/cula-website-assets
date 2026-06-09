@@ -5,9 +5,9 @@ WebP frames extracted from the Cula Technologies website animations (source: 192
 ## Contents
 
 ### `hero-animation/`
-Every frame of the hero animation, exported as WebP at full **1920×1080** resolution.
-- 1423 frames, 30 fps (~47.4 s)
-- Named sequentially: `frame_0001.webp` … `frame_1423.webp`
+Frames of the hero animation, exported as WebP at full **1920×1080** resolution.
+- 1418 frames, 30 fps (first 3 and last 2 frames trimmed)
+- Named sequentially: `frame_0001.webp` … `frame_1418.webp`
 
 ### `cover-frames/`
 The **first frame** of each card animation, exported as WebP at **1920×1080**:

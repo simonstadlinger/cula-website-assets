@@ -91,13 +91,17 @@
     set:  qs.get('set'),
     step: parseInt(qs.get('step') || '2', 10),
     len:  parseInt(qs.get('len') || '5000', 10),
+    head: parseInt(qs.get('head') || '15', 10), // % of frames gated densely from the start
     live: qs.has('live')
   };
   if (!VIEWPORTS[cfg.vp]) cfg.vp = 'desktop';
   const vp = VIEWPORTS[cfg.vp];
   const setGroup = cfg.live ? SETS.live : SETS[vp.sets];
   if (!setGroup[cfg.set]) cfg.set = cfg.live ? 'webp-full' : vp.defaults.set;
-  if (cfg.live) cfg.step = parseInt(qs.get('step') || '8', 10); // live site uses step 8
+  if (cfg.live) {
+    cfg.step = parseInt(qs.get('step') || '8', 10); // live site uses step 8
+    cfg.head = parseInt(qs.get('head') || '0', 10); // and gates on the skeleton only
+  }
   const SET = setGroup[cfg.set];
 
   // on a real phone, don't draw a fake device frame — use the actual window
@@ -182,6 +186,9 @@
       `<div class="row"><span class="lbl">scroll</span>` +
         [3930, 5000, 6500].map(l => opt(l + 'px', l === cfg.len, link(p => p.set('len', String(l))))).join('') +
       `</div>` +
+      `<div class="row"><span class="lbl">gate head</span>` +
+        [0, 15, 30].map(h => opt(h + '%', h === cfg.head, link(p => p.set('head', String(h))))).join('') +
+      `</div>` +
       `<div class="stats">` +
         `${N} frames · loaded ${loaded.reduce((a, b) => a + b, 0)}/${N} · showing #${lastShownIdx}<br>` +
         `downloaded ${transferredMB().toFixed(1)} MB` +
@@ -249,12 +256,15 @@
       pump();
     });
   }
+  // gate = dense head (first `head` %) + every-8th skeleton + last frame
+  const headCount = Math.ceil((Math.max(0, Math.min(100, cfg.head)) / 100) * N);
   const coarse = [];
-  for (let i = 0; i < N; i += 8) coarse.push(i);
-  if (coarse[coarse.length - 1] !== N - 1) coarse.push(N - 1);
-  const coarseSet = new Set(coarse);
+  const inGate = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    if (i < headCount || i % 8 === 0 || i === N - 1) { coarse.push(i); inGate[i] = 1; }
+  }
   const fine = [];
-  for (let i = 0; i < N; i++) if (!coarseSet.has(i)) fine.push(i);
+  for (let i = 0; i < N; i++) if (!inGate[i]) fine.push(i);
 
   renderPanel();
   const t0 = performance.now();

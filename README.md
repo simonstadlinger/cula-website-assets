@@ -82,15 +82,22 @@ to the cover region, so the result looks identical to today, just sharper and fa
 All other props stay unchanged. AVIF is supported by all browsers since early 2023; if you prefer
 maximum compatibility, the `…webp…` sets are drop-in equivalents at ~30 % more bytes.
 
-**Optional component hardening (one-line fix, not required for the changes above)**
+**Optional component upgrade: [`framer/VideoScrubber.tsx`](framer/VideoScrubber.tsx)**
 
-In the Video Scrubber's preloader, the `onerror` handler marks a frame as successfully loaded
-(same flag as `onload`). Consequence: if any download fails mid-preload (flaky connection, CDN
-hiccup), the component believes the frame is cached and re-requests it from the network on
-*every* scroll position that lands on it. Suggested fix in the code component: in the image
-preload loop, set the "loaded" flag only in `onload`; in `onerror` just continue the queue
-(the existing nearest-loaded-frame fallback already covers missing frames gracefully), or
-re-queue the index once for a retry.
+A drop-in replacement for the "Video Scrubber 3" code file (identical props, controls, and
+rendering — existing instances keep working). To adopt: open the code component in Framer and
+replace the file contents. It fixes/improves two things:
+
+1. **Smarter loader gate.** The original gates the loading bar only on every 8th frame, so
+   right after the bar disappears the animation is uniformly chunky. The replacement preloads
+   the *first 15 % of frames densely* (what visitors scrub first) **plus** the every-8th
+   skeleton, then backfills the rest in the background. The percentage is a new instance prop
+   (`Gate Head %`, default 15; `0` = original behavior). Try it on the comparison page via the
+   "gate head" toggle or `?head=15`.
+2. **`onerror` bug fix.** The original marks failed downloads as successfully loaded, so a
+   frame that failed once (flaky connection, CDN hiccup) is re-requested from the network on
+   every scroll position that lands on it. The replacement only marks frames loaded in
+   `onload`; missing frames are covered by the existing nearest-loaded-frame fallback.
 
 **Adopting / rollback**
 - The sets live on branch [`hero-v2-preview`](../../tree/hero-v2-preview). Merge it into `main`
@@ -112,7 +119,8 @@ Use the panel (top-left) or URL parameters:
 | `set` | `webp-full` \| `webp-lo` \| `avif-full` \| `avif-lo` | frame set within the viewport (full = 1920 px desktop / 1080 h mobile; lo = 1600 px / 810 h) |
 | `step` | `1`–`8` | `frameStep` — `2` is the proposal, `8` is today's value |
 | `len` | px | `scrollLength` — `5000` proposed, `3930` today |
-| `live` | `1` | reference mode: exactly what the live site loads today (original frames, step 8) |
+| `head` | `0`–`100` | % of frames the loader gates densely from the start (see component upgrade below) — `15` proposed, `0` = current component behavior |
+| `live` | `1` | reference mode: exactly what the live site loads today (original frames, step 8, no dense head) |
 
 The panel shows live stats: frames loaded, loader-gate time, total MB downloaded.
 

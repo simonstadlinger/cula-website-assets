@@ -11,12 +11,12 @@
   /* ---- control panel ---- */
   .panel {
     position: fixed; top: 10px; left: 10px; z-index: 99;
-    font: 12px/1.6 ui-monospace, monospace; color: var(--ink);
+    font: 12px/1.7 ui-monospace, monospace; color: var(--ink);
     background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 10px;
-    padding: 10px 14px; max-width: 360px; backdrop-filter: blur(4px);
+    padding: 12px 16px; width: max-content; max-width: 95vw; backdrop-filter: blur(4px);
   }
-  .panel .row { margin: 2px 0; }
-  .panel .lbl { display: inline-block; width: 64px; color: var(--muted); }
+  .panel .row { margin: 2px 0; white-space: nowrap; }
+  .panel .lbl { display: inline-block; width: 92px; color: var(--muted); }
   .panel a {
     color: var(--accent); text-decoration: none; margin-right: 6px;
     padding: 1px 6px; border-radius: 6px; border: 1px solid transparent;

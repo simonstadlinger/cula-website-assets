@@ -203,9 +203,9 @@
       `<div class="row"><span class="lbl">gate head</span>` +
         [0, 15, 30].map(h => opt(h + '%', h === cfg.head, link(p => p.set('head', String(h))))).join('') +
       `</div>` +
-      `<div class="row"><span class="lbl">load screen</span>` +
-        opt('on', cfg.lock, link(p => p.set('lock', '1'))) +
-        opt('off', !cfg.lock, link(p => p.set('lock', '0'))) +
+      `<div class="row"><span class="lbl">gate loader</span>` +
+        opt('blocking', cfg.lock, link(p => p.set('lock', '1'))) +
+        opt('non-blocking', !cfg.lock, link(p => p.set('lock', '0'))) +
       `</div>` +
       `<div class="stats">` +
         `${N} frames · loaded ${loaded.reduce((a, b) => a + b, 0)}/${N} · showing #${lastShownIdx}<br>` +

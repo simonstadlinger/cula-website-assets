@@ -120,7 +120,8 @@ Use the panel (top-left) or URL parameters:
 | `step` | `1`–`8` | `frameStep` — `2` is the proposal, `8` is today's value |
 | `len` | px | `scrollLength` — `5000` proposed, `3930` today |
 | `head` | `0`–`100` | % of frames the loader gates densely from the start (see component upgrade below) — `15` proposed, `0` = current component behavior |
-| `live` | `1` | reference mode: exactly what the live site loads today (original frames, step 8, no dense head) |
+| `lock` | `1` \| `0` | blocking loading screen — when on, scroll is locked behind a centered loading bar until the gate is ready (lets you feel the wait a visitor would experience). Default on, except in `live` mode. The current production component does **not** block (`0`). |
+| `live` | `1` | reference mode: exactly what the live site loads today (original frames, step 8, no dense head, no blocking screen) |
 
 The panel shows live stats: frames loaded, loader-gate time, total MB downloaded.
 

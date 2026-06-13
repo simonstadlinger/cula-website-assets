@@ -32,11 +32,23 @@
   .stage.window { width: 100%; }
   /* device simulation: fixed-size frame with its own scrollbar */
   .stage.device {
+    position: relative;
     overflow-y: auto; overflow-x: hidden;
     border: 12px solid #0d2039; border-radius: 28px;
     margin: 56px 0; background: #fff;
     box-shadow: 0 20px 60px rgba(13,32,57,.25);
   }
+  /* blocking loading screen (covers the scroller until the gate is ready) */
+  .gate-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; background: #fcfdfe; transition: opacity .35s ease;
+  }
+  .gate-overlay.device { position: absolute; border-radius: 16px; }
+  .gate-overlay .bar { width: 240px; height: 3px; border-radius: 2px; background: rgba(13,32,57,.12); overflow: hidden; }
+  .gate-overlay .fill { width: 0%; height: 100%; background: var(--ink); transition: width .15s ease-out; }
+  .gate-overlay .lbl2 { font: 11px/1 ui-monospace, monospace; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .gate-overlay.hide { opacity: 0; pointer-events: none; }
   .scrub-wrap { position: relative; }
   .scrub-media {
     position: sticky; top: 0;
@@ -92,6 +104,7 @@
     step: parseInt(qs.get('step') || '2', 10),
     len:  parseInt(qs.get('len') || '5000', 10),
     head: parseInt(qs.get('head') || '15', 10), // % of frames gated densely from the start
+    lock: qs.has('lock') ? qs.get('lock') === '1' : true, // block scroll behind a loading screen until the gate is ready
     live: qs.has('live')
   };
   if (!VIEWPORTS[cfg.vp]) cfg.vp = 'desktop';
@@ -101,6 +114,7 @@
   if (cfg.live) {
     cfg.step = parseInt(qs.get('step') || '8', 10); // live site uses step 8
     cfg.head = parseInt(qs.get('head') || '0', 10); // and gates on the skeleton only
+    if (!qs.has('lock')) cfg.lock = false; // the real site doesn't block scroll while loading
   }
   const SET = setGroup[cfg.set];
 
@@ -177,7 +191,7 @@
       `<div class="row"><span class="lbl">viewport</span>` +
         ['desktop', 'tablet', 'mobile'].map(v =>
           opt(v, v === cfg.vp && !cfg.live, link(p => { p.set('vp', v); p.delete('set'); p.delete('live'); }))).join('') +
-        opt('live site today', cfg.live, link(p => { p.set('live', '1'); p.delete('set'); p.delete('vp'); p.delete('step'); })) +
+        opt('live site today', cfg.live, link(p => { p.set('live', '1'); p.delete('set'); p.delete('vp'); p.delete('step'); p.delete('lock'); })) +
       `</div>` +
       (fmts ? `<div class="row"><span class="lbl">frames</span>${fmts}</div>` : '') +
       `<div class="row"><span class="lbl">step</span>` +
@@ -188,6 +202,10 @@
       `</div>` +
       `<div class="row"><span class="lbl">gate head</span>` +
         [0, 15, 30].map(h => opt(h + '%', h === cfg.head, link(p => p.set('head', String(h))))).join('') +
+      `</div>` +
+      `<div class="row"><span class="lbl">load screen</span>` +
+        opt('on', cfg.lock, link(p => p.set('lock', '1'))) +
+        opt('off', !cfg.lock, link(p => p.set('lock', '0'))) +
       `</div>` +
       `<div class="stats">` +
         `${N} frames · loaded ${loaded.reduce((a, b) => a + b, 0)}/${N} · showing #${lastShownIdx}<br>` +
@@ -266,16 +284,42 @@
   const fine = [];
   for (let i = 0; i < N; i++) if (!inGate[i]) fine.push(i);
 
+  // ---- blocking loading screen: lock scroll until the gate is ready ----
+  function lockScroll() {
+    if (simulateDevice) { stage.scrollTop = 0; stage.style.overflowY = 'hidden'; }
+    else { window.scrollTo(0, 0); document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden'; }
+  }
+  function unlockScroll() {
+    if (simulateDevice) stage.style.overflowY = 'auto';
+    else { document.documentElement.style.overflow = ''; document.body.style.overflow = ''; }
+  }
+  let overlay = null, gateFill = fill;
+  if (cfg.lock) {
+    overlay = document.createElement('div');
+    overlay.className = 'gate-overlay' + (simulateDevice ? ' device' : '');
+    overlay.innerHTML = '<div class="bar"><div class="fill"></div></div><div class="lbl2">loading</div>';
+    (simulateDevice ? stage : document.body).appendChild(overlay);
+    gateFill = overlay.querySelector('.fill');
+    loader.style.display = 'none'; // thin sticky bar not needed while the overlay is up
+    lockScroll();
+  }
+
   renderPanel();
   const t0 = performance.now();
   let done = 0;
   loadSet(coarse, () => {
     done++;
-    fill.style.width = Math.round((done / coarse.length) * 100) + '%';
+    gateFill.style.width = Math.round((done / coarse.length) * 100) + '%';
     if (lastShownIdx === -1) update();
   }).then(() => {
     gateSeconds = (performance.now() - t0) / 1000;
-    loader.style.display = 'none';
+    if (overlay) {
+      unlockScroll();
+      overlay.classList.add('hide');
+      setTimeout(() => overlay.remove(), 400);
+    } else {
+      loader.style.display = 'none';
+    }
     update();
     return loadSet(fine, null);
   }).then(() => {

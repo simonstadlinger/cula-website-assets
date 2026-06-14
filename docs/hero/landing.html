@@ -184,7 +184,7 @@
     transLen:   parseInt(qs.get('trans') || '560', 10),
   };
   const COARSE = 160, FINE = 16, MIN_MARGIN = 56;
-  const forcedP = qs.has('p') ? Math.max(0, Math.min(1, parseFloat(qs.get('p')))) : null;
+  const forcedP = qs.has('p') ? Math.max(0, Math.min(2, parseFloat(qs.get('p')))) : null; // 1..2 = exit (QA)
 
   const urls = [];
   for (let i = 0; i < cfg.frameCount; i += Math.max(1, cfg.frameStep)) {
@@ -258,23 +258,34 @@
     claim.style.opacity = op.toFixed(3);
   }
 
-  // logo dark<->light by clipping (mirrors Framer Logo_Switcher)
-  function applyLogo(phase, wipe){
-    if(phase==='after'){ logoBlue.style.clipPath='none'; logoWhite.style.clipPath='inset(0 0 100% 0)'; return; }
+  // logo dark<->light by clipping the boundary as it sweeps through the logo (mirrors Framer Logo_Switcher)
+  function applyLogo(phase, wipe, exitY){
     if(phase==='scrub'){ logoBlue.style.clipPath='inset(0 0 100% 0)'; logoWhite.style.clipPath='none'; return; }
+    if(phase==='after'){
+      // exit: black frame on top, incoming white section below — boundary sweeps bottom->top
+      const above=clamp((exitY-logoBox.top)/logoBox.height,0,1);                  // logo fraction still over black
+      logoWhite.style.clipPath = `inset(0 0 ${((1-above)*100).toFixed(2)}% 0)`;   // white on the dark (top) side
+      logoBlue.style.clipPath  = `inset(${(above*100).toFixed(2)}% 0 0 0)`;       // blue on the white (bottom) side
+      return;
+    }
+    // entry: white landing above the wipe line, dark scrubber below
     const lineY=(1-wipe)*innerHeight;
-    const above=clamp((lineY-logoBox.top)/logoBox.height,0,1);   // fraction of logo above the wipe line
+    const above=clamp((lineY-logoBox.top)/logoBox.height,0,1);   // fraction of logo above the wipe line (white side)
     logoBlue.style.clipPath  = `inset(0 0 ${((1-above)*100).toFixed(2)}% 0)`; // blue on the white side
     logoWhite.style.clipPath = `inset(${(above*100).toFixed(2)}% 0 0 0)`;     // white on the dark side
   }
 
   function render(){
     if(scrollable<=0) return;
-    const p  = forcedP!==null ? forcedP : clamp((window.pageYOffset-wrapTop)/scrollable,0,1);
+    const sy = window.pageYOffset;
+    let p, ep;                                   // p: entry+scrub 0..1; ep: exit 0..1 (white section sweeping in)
+    if(forcedP!==null){ p=Math.min(forcedP,1); ep=clamp(forcedP-1,0,1); }
+    else { p=clamp((sy-wrapTop)/scrollable,0,1); ep=clamp((sy-(wrapTop+scrollable))/innerHeight,0,1); }
     const tT = clamp(cfg.transLen/scrollable,0.001,0.95);
     const tp = clamp(p/tT,0,1), sp = clamp((p-tT)/(1-tT),0,1);
     let phase='landing'; if(sp>=1) phase='after'; else if(sp>0) phase='scrub';
     const wipe=smooth(tp);
+    const exitY = innerHeight*(1-ep);            // viewport Y of the black/white boundary during exit
 
     landing.style.clipPath='inset(0 0 '+(wipe*100).toFixed(2)+'% 0)';
     gridDark.style.opacity=(1-smooth(clamp((tp-0.6)/0.4,0,1))).toFixed(3);
@@ -282,7 +293,7 @@
     inverter.style.opacity=(tp>0.001&&tp<0.999)?1:0;
 
     applyClaim(tp,sp);
-    applyLogo(phase,wipe);
+    applyLogo(phase,wipe,exitY);
 
     controls.classList.toggle('scrub', phase==='scrub');
     const botVis = phase==='after' ? 1 : (phase==='landing' ? (1-smooth(tp)) : 0);
@@ -323,6 +334,7 @@
   // boot
   freezeWidths(); measure(); show(0); render();
   if(forcedP===null) lockScroll();
+  else if(forcedP>1) scrollTo(0, (wrapTop+scrollable) + (forcedP-1)*innerHeight); // QA: bring real exit content in
   // re-freeze after webfont settles (width can shift)
   if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ freezeWidths(); measure(); render(); });
   let done=0;

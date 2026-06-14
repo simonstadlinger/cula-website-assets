@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hero scrubber test — frameStep A/B</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #fcfdfe; }
+  .scrub-wrap { position: relative; }
+  .scrub-media {
+    position: sticky;
+    top: 0;
+    width: 100%;
+    height: 100lvh;
+    object-fit: cover;
+    display: block;
+  }
+  .loader {
+    position: sticky;
+    top: 50%;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+    margin-top: -50lvh;
+  }
+  .loader .bar { width: 200px; height: 2px; border-radius: 1px; background: rgba(0,0,0,.15); overflow: hidden; }
+  .loader .fill { width: 0%; height: 100%; background: rgba(0,0,0,.7); transition: width .15s ease-out; }
+  .hud {
+    position: fixed; top: 10px; left: 10px; z-index: 99;
+    font: 12px/1.5 ui-monospace, monospace; color: #0d2039;
+    background: rgba(255,255,255,.85); border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 8px 12px; max-width: 340px;
+  }
+  .hud a { color: #3772ff; margin-right: 8px; }
+  .after { height: 150vh; display: flex; align-items: center; justify-content: center; font: 600 24px/1 system-ui; color: #475569; }
+</style>
+</head>
+<body>
+<div class="hud" id="hud"></div>
+
+<div class="scrub-wrap" id="wrap">
+  <img class="scrub-media" id="media" alt="" />
+  <div class="loader" id="loader"><div class="bar"><div class="fill" id="fill"></div></div></div>
+</div>
+<div class="after">rest of the page — keep scrolling back up to scrub again</div>
+
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+
+  // ---- config (mirrors the Framer Video_Scrubber_3 instance props) ----
+  const cfg = {
+    base: qs.get('base') ||
+      (qs.has('local')
+        ? '/cula-website-frames/hero-animation-v2'
+        : 'https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@hero-v2-preview/hero-animation-v2'),
+    prefix: 'frame_',
+    ext: qs.get('ext') || '.webp',
+    pad: 4,
+    startIndex: 1,
+    frameCount: parseInt(qs.get('count') || '1417', 10),
+    frameStep: parseInt(qs.get('step') || '2', 10),
+    scrollLength: parseInt(qs.get('len') || '3930', 10)
+  };
+
+  // ---- URL list: identical logic to the Framer component ----
+  const urls = [];
+  for (let i = 0; i < cfg.frameCount; i += Math.max(1, cfg.frameStep)) {
+    const n = String(cfg.startIndex + i).padStart(cfg.pad, '0');
+    urls.push(`${cfg.base.replace(/\/$/, '')}/${cfg.prefix}${n}${cfg.ext}`);
+  }
+  const N = urls.length;
+
+  // ---- DOM ----
+  const wrap = document.getElementById('wrap');
+  const img = document.getElementById('media');
+  wrap.style.height = cfg.scrollLength + 'px';
+
+  // ---- state ----
+  const loaded = new Uint8Array(N); // compressed Image ready
+  const images = new Array(N);      // HTMLImageElement backing store (keeps cache warm)
+  let lastShownIdx = -1;
+
+  // ---- HUD ----
+  const hud = document.getElementById('hud');
+  function link(mutate) {
+    const p = new URLSearchParams(location.search);
+    mutate(p);
+    return location.pathname + '?' + p;
+  }
+  function renderHud(extra = '') {
+    hud.innerHTML =
+      `step=<b>${cfg.frameStep}</b> len=<b>${cfg.scrollLength}px</b> frames=<b>${N}</b> ext=<b>${cfg.ext}</b><br>` +
+      `loaded ${loaded.reduce((a, b) => a + b, 0)}/${N} · showing #${lastShownIdx} ${extra}<br>` +
+      `<a href="${link(p => p.set('len', cfg.scrollLength === 5000 ? '3930' : '5000'))}">len ${cfg.scrollLength === 5000 ? 3930 : 5000}</a>` +
+      `<a href="${link(p => p.set('step', cfg.frameStep === 2 ? '3' : '2'))}">step ${cfg.frameStep === 2 ? 3 : 2}</a>` +
+      (qs.has('local')
+        ? `<a href="${link(p => p.delete('local'))}">cdn</a>`
+        : `<a href="${link(p => p.set('local', '1'))}">local</a>`) +
+      `<a href="landing.html" style="font-weight:700">↗ landing</a>`;
+  }
+
+  // ---- nearest-loaded fallback (same as component) ----
+  function nearestLoaded(i) {
+    if (loaded[i]) return i;
+    for (let d = 1; d < N; d++) {
+      if (i - d >= 0 && loaded[i - d]) return i - d;
+      if (i + d < N && loaded[i + d]) return i + d;
+    }
+    return i;
+  }
+
+  function show(i) {
+    const idx = nearestLoaded(i);
+    if (idx === lastShownIdx) return;
+    img.src = urls[idx];
+    lastShownIdx = idx;
+  }
+
+  // ---- scroll mapping (same as component: wrap top/height vs pageYOffset) ----
+  let wrapTop = 0, wrapH = 0;
+  function measure() {
+    const r = wrap.getBoundingClientRect();
+    wrapTop = window.pageYOffset + r.top;
+    wrapH = r.height - innerHeight;
+  }
+  function update() {
+    if (wrapH <= 0) return;
+    const frac = Math.max(0, Math.min(1, (window.pageYOffset - wrapTop) / wrapH));
+    show(Math.min(N - 1, Math.floor(frac * N)));
+    renderHud();
+  }
+  let raf = null;
+  addEventListener('scroll', () => {
+    if (raf === null) raf = requestAnimationFrame(() => { raf = null; update(); });
+  }, { passive: true });
+  addEventListener('resize', () => { measure(); update(); });
+
+  // ---- two-pass preloader (same strategy: every 8th gates the loader, rest in background, concurrency 10) ----
+  const loaderEl = document.getElementById('loader');
+  const fillEl = document.getElementById('fill');
+  function loadSet(indices, onEach) {
+    return new Promise(resolve => {
+      if (!indices.length) return resolve();
+      let next = 0, active = 0;
+      const pump = () => {
+        while (active < 10 && next < indices.length) {
+          const idx = indices[next++];
+          active++;
+          const im = new Image();
+          images[idx] = im;
+          const fin = () => {
+            active--;
+            loaded[idx] = 1;
+            onEach && onEach();
+            if (next >= indices.length && active === 0) resolve(); else pump();
+          };
+          im.onload = fin;
+          im.onerror = fin;
+          im.src = urls[idx];
+        }
+      };
+      pump();
+    });
+  }
+  const coarse = [];
+  for (let i = 0; i < N; i += 8) coarse.push(i);
+  if (coarse[coarse.length - 1] !== N - 1) coarse.push(N - 1);
+  const coarseSet = new Set(coarse);
+  const fine = [];
+  for (let i = 0; i < N; i++) if (!coarseSet.has(i)) fine.push(i);
+
+  measure();
+  renderHud('(loading…)');
+  const t0 = performance.now();
+  let done = 0;
+  loadSet(coarse, () => {
+    done++;
+    fillEl.style.width = Math.round((done / coarse.length) * 100) + '%';
+    if (lastShownIdx === -1) update(); // paint first available frame while gating
+  }).then(() => {
+    loaderEl.style.display = 'none';
+    renderHud(`· gate done in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+    update();
+    return loadSet(fine, null);
+  }).then(() => {
+    lastShownIdx = -1;
+    update();
+    renderHud(`· all loaded in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+  });
+})();
+</script>
+</body>
+</html>

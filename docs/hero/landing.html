@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cula — hero landing + transition prototype</title>
+<style>
+  :root{
+    --ink:#0D2039;            /* brand navy (Lockup-Blue)  */
+    --paper:#fcfdfe;          /* off-white landing bg       */
+    --slate:#6b7a90;          /* inactive nav text          */
+    --hair:#E2E8F0;           /* coarse grid / hairline     */
+    --fine:#F1F5F9;           /* fine grid                  */
+    --coarse:160px;           /* coarse grid module (live)  */
+    --fineCell:16px;          /* fine grid module (live)    */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);
+    font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;}
+
+  /* ---------- scrubber (sticky, bottom layer) ---------- */
+  .scrub-wrap{position:relative;z-index:1;}
+  .scrub-media{position:sticky;top:0;width:100%;height:100lvh;object-fit:cover;display:block;background:#05070c;}
+
+  /* ---------- fixed overlay stack ---------- */
+  .overlay{position:fixed;inset:0;pointer-events:none;}
+  .overlay.z-bg{z-index:5;}
+
+  /* grid-dark: light lines on the revealed (dark) side of the wipe (coarse layered ON TOP of fine) */
+  .grid-dark{position:absolute;inset:0;opacity:0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,.085) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,.085) 1px, transparent 1px),
+      linear-gradient(to right, rgba(255,255,255,.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size:var(--coarse) var(--coarse),var(--coarse) var(--coarse),var(--fineCell) var(--fineCell),var(--fineCell) var(--fineCell);}
+
+  /* landing: off-white paper + live grid (coarse 160 #E2E8F0 ON TOP of fine 16 #F1F5F9,
+     so the darker coarse lines win where they coincide every 160px) */
+  .landing{position:absolute;inset:0;background-color:var(--paper);
+    background-image:
+      linear-gradient(to right, var(--hair) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--hair) 1px, transparent 1px),
+      linear-gradient(to right, var(--fine) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--fine) 1px, transparent 1px);
+    background-size:var(--coarse) var(--coarse),var(--coarse) var(--coarse),var(--fineCell) var(--fineCell),var(--fineCell) var(--fineCell);
+    clip-path:inset(0 0 0% 0);will-change:clip-path;}
+
+  /* inverter line at the wipe boundary */
+  .inverter{position:absolute;left:0;right:0;height:2px;background:var(--ink);
+    box-shadow:0 0 12px 1px rgba(13,32,57,.35);opacity:0;transform:translateY(-1px);transition:opacity .25s ease;}
+
+  /* ---------- claim box (morphs landing-center -> scrubber-bottom) ---------- */
+  .claim{position:fixed;z-index:14;display:flex;justify-content:space-between;align-items:stretch;gap:24px;
+    padding:22px 28px;overflow:hidden;background:var(--paper);border:1px solid var(--hair);
+    will-change:left,top,width,height;}
+  .claim .title{align-self:flex-start;font-size:26px;line-height:1.16;font-weight:700;letter-spacing:-.015em;white-space:nowrap;}
+  .claim .tag{align-self:flex-end;text-align:right;font-size:13px;line-height:1.3;font-weight:700;white-space:nowrap;color:var(--ink);}
+
+  /* gate loader, below the box */
+  .gate{position:fixed;z-index:15;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:10px;transition:opacity .4s ease;}
+  .gate .bar{width:220px;height:2px;border-radius:1px;background:rgba(13,32,57,.15);overflow:hidden;}
+  .gate .fill{width:0%;height:100%;background:rgba(13,32,57,.8);transition:width .15s ease-out;}
+  .gate .lbl{font:600 11px/1 ui-monospace,monospace;letter-spacing:.18em;text-transform:uppercase;color:rgba(13,32,57,.55);}
+  .gate .chev{font-size:13px;color:rgba(13,32,57,.45);line-height:1;}
+  .gate.ready .bar{display:none;}
+  .gate.ready .lbl,.gate.ready .chev{animation:pulse 2.1s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:.95}}
+
+  /* ---------- controls (fixed; persist) ---------- */
+  .topctl{position:fixed;z-index:21;pointer-events:auto;display:flex;align-items:center;overflow:hidden;
+    transition:height .45s cubic-bezier(.4,0,.2,1),background-color .45s ease,box-shadow .45s ease,
+               border-radius .45s ease,padding .45s ease;white-space:nowrap;}
+  .topctl > *{transition:opacity .28s ease;}
+
+  /* logo: stacked blue+white lockups, clipped by the wipe (mirrors Logo_Switcher) */
+  .logo{top:34px;height:44px;width:116px;border-radius:0;cursor:pointer;text-decoration:none;}
+  .logo .lk{position:absolute;left:0;top:50%;transform:translateY(-50%);height:36px;width:116px;display:block;}
+  .logo .blue{fill:var(--ink);}
+  .logo .white{fill:#fff;clip-path:inset(0 0 100% 0);}
+
+  /* menu: white pill nav */
+  .menu{top:34px;height:44px;border-radius:16px;padding:5px;gap:0;
+    background:#fff;box-shadow:0 1px 2px rgba(13,32,57,.07), inset 0 0 0 1px var(--hair);}
+  .menu .links{display:flex;align-items:center;}
+  .menu a{font-size:15px;font-weight:500;color:var(--slate);text-decoration:none;padding:7px 16px;border-radius:11px;}
+  .menu a.active{color:var(--ink);font-weight:700;}
+  .menu .sep{width:1px;align-self:stretch;margin:6px 6px;background:var(--hair);}
+  .menu .cta{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:var(--ink);padding:7px 16px;}
+
+  /* bottom controls */
+  .botctl{position:fixed;z-index:21;pointer-events:auto;transition:opacity .4s ease;}
+  .hub{bottom:32px;width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    background:#fff;box-shadow:inset 0 0 0 1px var(--hair);font-size:17px;}
+  .roles{bottom:38px;display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:var(--ink);text-decoration:none;}
+
+  /* ---- collapsed (scrub) state: flat 12px boxy white bars, full original width ---- */
+  .controls.scrub .topctl{height:12px;border-radius:4px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.28);padding:0;}
+  .controls.scrub .topctl > *{opacity:0;}
+  .controls.scrub .logo:hover{height:44px;background:transparent;box-shadow:none;border-radius:0;}
+  .controls.scrub .menu:hover{height:44px;padding:5px;border-radius:16px;
+    background:#fff;box-shadow:0 1px 2px rgba(13,32,57,.07), inset 0 0 0 1px var(--hair);}
+  .controls.scrub .topctl:hover > *{opacity:1;}
+
+  /* ---------- after-hero placeholder ---------- */
+  .after{position:relative;z-index:2;background:var(--paper);}
+  .after .sec{height:100vh;display:flex;align-items:center;justify-content:center;
+    font:700 28px/1.2 system-ui;color:#475569;border-top:1px solid var(--hair);}
+</style>
+</head>
+<body>
+
+<!-- shared logo geometry (Cula lockup, viewBox 343x107) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><g id="culaLockup">
+  <path d="M215.337 80.4565C228.293 80.4565 238.091 72.2121 239.145 60.1065H229.664C228.4 67.4116 222.818 71.8999 215.444 71.8999C206.596 71.8999 199.43 65.322 199.43 54.4686C199.43 43.824 206.28 37.0414 215.444 37.0414C222.607 37.0414 228.083 41.1122 229.557 48.8348H239.038C238.09 36.6248 228.084 28.4848 215.444 28.4848C200.908 28.4848 189.74 39.0251 189.74 54.5746C189.74 69.8111 200.696 80.4565 215.337 80.4565Z"/>
+  <path d="M259.156 80.458C264.423 80.458 269.058 78.1597 271.796 74.2984V79.8302H280.643V41.4252H271.689V61.9872C271.689 68.7706 267.581 72.3172 262.209 72.3172C257.364 72.3172 254.309 69.5003 254.309 63.2387V41.4252H245.356V65.6398C245.356 75.0322 251.045 80.458 259.156 80.458Z"/>
+  <path d="M297.273 26.8115H288.336V79.8106H297.273V26.8115Z"/>
+  <path d="M316.876 80.3522C322.67 80.3522 327.622 77.9544 330.15 73.9887C330.887 77.85 333.838 79.8304 338.367 79.8304H343V72.5252H341.527C339.42 72.5252 338.367 71.5876 338.367 69.5004V56.0356C338.367 46.3302 332.572 40.8016 321.933 40.8016C311.716 40.8016 305.186 45.8093 304.343 53.7406H313.613C314.14 50.1923 316.983 48.1068 321.723 48.1068C326.885 48.1068 329.73 50.7166 329.73 55.7258V57.0792H318.67C308.979 57.0792 302.973 61.6743 302.973 68.7707C302.973 75.5541 308.66 80.3522 316.876 80.3522ZM312.033 68.2489C312.033 65.1182 314.665 63.2389 319.826 63.2389H329.73V63.7607C329.73 69.2917 325.2 73.3609 318.88 73.3609C314.561 73.3609 312.033 71.2754 312.033 68.2489Z"/>
+  <path d="M87.2115 11.8841L105.497 1.41386C106.728 0.709152 108.24 0.708832 109.471 1.41302L152.013 25.7479C153.258 26.4603 154.027 27.7852 154.027 29.22V77.8268C154.027 79.2616 153.258 80.5865 152.013 81.2989L109.469 105.635C108.239 106.338 106.729 106.339 105.498 105.636L87.2115 95.1838C99.562 85.4183 107.484 70.3814 107.484 53.5234C107.484 36.676 99.562 21.639 87.2115 11.8841Z"/>
+  <path d="M87.2282 95.1315C78.0361 102.39 66.402 106.74 53.7526 106.74C41.1032 106.74 29.4691 102.39 20.277 95.1315C7.92944 85.3721 0 70.3391 0 53.4844C0 36.6298 7.92944 21.5967 20.277 11.8373C29.4691 4.57893 41.1032 0.229553 53.7526 0.229553C66.402 0.229553 78.0361 4.57893 87.2282 11.8373L61.9485 26.2948C61.3257 26.651 60.9414 27.3135 60.9414 28.031V78.9389C60.9414 79.6564 61.3257 80.3189 61.9485 80.6751L87.2282 95.1315Z"/>
+</g></defs></svg>
+
+<!-- scrubber -->
+<div class="scrub-wrap" id="wrap">
+  <img class="scrub-media" id="media" alt="" />
+</div>
+
+<!-- background overlay stack -->
+<div class="overlay z-bg" id="bg">
+  <div class="grid-dark" id="gridDark"></div>
+  <div class="landing" id="landing"></div>
+  <div class="inverter" id="inverter"></div>
+</div>
+
+<!-- claim box -->
+<div class="claim" id="claim">
+  <div class="title">The MRV engine<br>for carbon removal</div>
+  <div class="tag">Grounded in precision.<br>Built to scale.</div>
+</div>
+
+<!-- gate loader -->
+<div class="gate" id="gate">
+  <div class="bar"><div class="fill" id="fill"></div></div>
+  <div class="lbl" id="gateLbl">loading</div>
+  <div class="chev" id="gateChev" style="display:none">↓</div>
+</div>
+
+<!-- controls -->
+<div class="controls" id="controls">
+  <a class="topctl logo" id="logo" href="index.html" aria-label="Cula — open scrubber test page">
+    <svg class="lk blue"  viewBox="0 0 343 107"><use href="#culaLockup"/></svg>
+    <svg class="lk white" viewBox="0 0 343 107"><use href="#culaLockup"/></svg>
+  </a>
+  <div class="topctl menu" id="menu">
+    <div class="links">
+      <a href="#" class="active">Home</a>
+      <a href="#">Insights</a>
+      <a href="#">About</a>
+    </div>
+    <span class="sep"></span>
+    <span class="cta">↗ Talk to us</span>
+  </div>
+  <div class="botctl hub" id="hub">🌐</div>
+  <a class="botctl roles" id="roles" href="#">↗ Open roles</a>
+</div>
+
+<!-- after-hero -->
+<div class="after">
+  <div class="sec">Section after the scrubber — controls have returned</div>
+  <div class="sec">Keep scrolling…</div>
+</div>
+
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const cfg = {
+    base: qs.get('base') ||
+      'https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@hero-v2-preview/hero-frames/desktop-avif-1920',
+    prefix: 'frame_', ext: qs.get('ext') || '.avif', pad: 4, startIndex: 1,
+    frameCount: parseInt(qs.get('count') || '1417', 10),
+    frameStep:  parseInt(qs.get('step')  || '2', 10),
+    scrubLen:   parseInt(qs.get('len')   || '3930', 10),
+    transLen:   parseInt(qs.get('trans') || '560', 10),
+  };
+  const COARSE = 160, FINE = 16, MIN_MARGIN = 56;
+  const forcedP = qs.has('p') ? Math.max(0, Math.min(1, parseFloat(qs.get('p')))) : null;
+
+  const urls = [];
+  for (let i = 0; i < cfg.frameCount; i += Math.max(1, cfg.frameStep)) {
+    const n = String(cfg.startIndex + i).padStart(cfg.pad, '0');
+    urls.push(`${cfg.base.replace(/\/$/, '')}/${cfg.prefix}${n}${cfg.ext}`);
+  }
+  const N = urls.length;
+
+  const $ = id => document.getElementById(id);
+  const wrap=$('wrap'), img=$('media'), landing=$('landing'), gridDark=$('gridDark'), inverter=$('inverter'),
+        claim=$('claim'), gate=$('gate'), fill=$('fill'), gateLbl=$('gateLbl'), gateChev=$('gateChev'),
+        controls=$('controls'), logo=$('logo'), menu=$('menu'), hub=$('hub'), roles=$('roles'),
+        logoBlue=logo.querySelector('.blue'), logoWhite=logo.querySelector('.white');
+
+  wrap.style.height = (cfg.transLen + cfg.scrubLen) + 'px';
+
+  const loaded = new Uint8Array(N), images = new Array(N);
+  let lastShownIdx = -1, gateDone = false;
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), lerp=(a,b,t)=>a+(b-a)*t,
+        smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
+
+  function nearestLoaded(i){ if(loaded[i])return i;
+    for(let d=1;d<N;d++){ if(i-d>=0&&loaded[i-d])return i-d; if(i+d<N&&loaded[i+d])return i+d; } return i; }
+  function show(i){ const idx=nearestLoaded(i); if(idx===lastShownIdx)return; img.src=urls[idx]; lastShownIdx=idx; }
+
+  // ---- layout: grid-aligned margins (centered coarse grid, like the live site) ----
+  let leftLine=0, rightLine=0, landingRect=null, bottomRect=null, logoBox=null;
+  function computeLayout(){
+    const vw=innerWidth, vh=innerHeight, cx=vw/2, cy=vh/2;
+    // content margins: largest ±k coarse cells leaving >= MIN_MARGIN, on grid lines
+    const k = Math.max(2, Math.floor((cx - MIN_MARGIN) / COARSE));
+    leftLine = cx - k*COARSE; rightLine = cx + k*COARSE;
+    const bk = Math.max(2, k-1);                       // scrubber box: one cell narrower each side
+    // landing box: centered vertically, top/bottom on fine lines, edges on the content margins
+    const lh = 8*FINE, bh = 88;                        // landing 128px -> scrubber 88px (shrinks vertically)
+    landingRect = { left:leftLine, top:cy-lh/2, width:rightLine-leftLine, height:lh };
+    bottomRect  = { left:cx-bk*COARSE, top:vh-32-bh, width:2*bk*COARSE, height:bh };
+    // align controls to the same boundaries
+    logo.style.left = leftLine+'px';
+    menu.style.right = (vw-rightLine)+'px';
+    hub.style.left  = leftLine+'px';
+    roles.style.right = (vw-rightLine)+'px';
+    // center the grids so a line passes through the viewport centre
+    const pos = `${cx%COARSE}px 0, 0 ${cy%COARSE}px, ${cx%FINE}px 0, 0 ${cy%FINE}px`;
+    landing.style.backgroundPosition = pos;
+    gridDark.style.backgroundPosition = pos;
+    gate.style.top = (landingRect.top + landingRect.height + 28) + 'px';
+    logoBox = logo.getBoundingClientRect();
+  }
+  // freeze the menu's natural width so its collapsed bar keeps that width (logo width is fixed in CSS)
+  function freezeWidths(){
+    menu.style.width=''; menu.style.width = menu.offsetWidth+'px';
+  }
+
+  let wrapTop=0, scrollable=0;
+  function measure(){ const r=wrap.getBoundingClientRect();
+    wrapTop=window.pageYOffset+r.top; scrollable=r.height-innerHeight; computeLayout(); }
+
+  function applyClaim(tp, sp){
+    const e=smooth(tp);
+    claim.style.left   = lerp(landingRect.left,   bottomRect.left,   e)+'px';
+    claim.style.top    = lerp(landingRect.top,    bottomRect.top,    e)+'px';
+    claim.style.width  = lerp(landingRect.width,  bottomRect.width,  e)+'px';
+    claim.style.height = lerp(landingRect.height, bottomRect.height, e)+'px';
+    const vpad = lerp(22, 13, e);                                         // padding eases in with the shrink
+    claim.style.paddingTop = vpad+'px'; claim.style.paddingBottom = vpad+'px';
+    claim.style.borderColor = 'rgba(226,232,240,'+(1-e).toFixed(3)+')';   // hairline fades as it floats free
+    let op=1; if(sp>0.92) op=1-smooth((sp-0.92)/0.08);
+    claim.style.opacity = op.toFixed(3);
+  }
+
+  // logo dark<->light by clipping (mirrors Framer Logo_Switcher)
+  function applyLogo(phase, wipe){
+    if(phase==='after'){ logoBlue.style.clipPath='none'; logoWhite.style.clipPath='inset(0 0 100% 0)'; return; }
+    if(phase==='scrub'){ logoBlue.style.clipPath='inset(0 0 100% 0)'; logoWhite.style.clipPath='none'; return; }
+    const lineY=(1-wipe)*innerHeight;
+    const above=clamp((lineY-logoBox.top)/logoBox.height,0,1);   // fraction of logo above the wipe line
+    logoBlue.style.clipPath  = `inset(0 0 ${((1-above)*100).toFixed(2)}% 0)`; // blue on the white side
+    logoWhite.style.clipPath = `inset(${(above*100).toFixed(2)}% 0 0 0)`;     // white on the dark side
+  }
+
+  function render(){
+    if(scrollable<=0) return;
+    const p  = forcedP!==null ? forcedP : clamp((window.pageYOffset-wrapTop)/scrollable,0,1);
+    const tT = clamp(cfg.transLen/scrollable,0.001,0.95);
+    const tp = clamp(p/tT,0,1), sp = clamp((p-tT)/(1-tT),0,1);
+    let phase='landing'; if(sp>=1) phase='after'; else if(sp>0) phase='scrub';
+    const wipe=smooth(tp);
+
+    landing.style.clipPath='inset(0 0 '+(wipe*100).toFixed(2)+'% 0)';
+    gridDark.style.opacity=(1-smooth(clamp((tp-0.6)/0.4,0,1))).toFixed(3);
+    inverter.style.top=((1-wipe)*100).toFixed(3)+'%';
+    inverter.style.opacity=(tp>0.001&&tp<0.999)?1:0;
+
+    applyClaim(tp,sp);
+    applyLogo(phase,wipe);
+
+    controls.classList.toggle('scrub', phase==='scrub');
+    const botVis = phase==='after' ? 1 : (phase==='landing' ? (1-smooth(tp)) : 0);
+    hub.style.opacity=botVis; roles.style.opacity=botVis;
+    hub.style.pointerEvents=botVis<.2?'none':'auto'; roles.style.pointerEvents=botVis<.2?'none':'auto';
+
+    // gate: visible during landing, fades quickly once scrolling starts
+    if(gateDone) gate.style.opacity = clamp(1-tp*6,0,1).toFixed(3);
+
+    if(phase!=='landing') show(Math.min(N-1, Math.floor(sp*N)));
+  }
+
+  let raf=null;
+  const onScroll=()=>{ if(raf===null) raf=requestAnimationFrame(()=>{raf=null;render();}); };
+  addEventListener('scroll', onScroll, {passive:true});
+  addEventListener('resize', ()=>{ freezeWidths(); measure(); render(); });
+
+  // gate scroll lock
+  const prevent=e=>e.preventDefault();
+  const SK=new Set([' ','PageDown','PageUp','ArrowDown','ArrowUp','End','Home']);
+  const preventKeys=e=>{ if(SK.has(e.key)) e.preventDefault(); };
+  function lockScroll(){ document.body.style.overflow='hidden';
+    addEventListener('wheel',prevent,{passive:false}); addEventListener('touchmove',prevent,{passive:false}); addEventListener('keydown',preventKeys,{passive:false}); }
+  function unlockScroll(){ document.body.style.overflow='';
+    removeEventListener('wheel',prevent); removeEventListener('touchmove',prevent); removeEventListener('keydown',preventKeys); }
+
+  // preloader
+  function loadSet(indices,onEach){ return new Promise(resolve=>{
+    if(!indices.length) return resolve(); let next=0,active=0;
+    const pump=()=>{ while(active<10&&next<indices.length){ const idx=indices[next++]; active++;
+      const im=new Image(); images[idx]=im;
+      const fin=()=>{ active--; loaded[idx]=1; onEach&&onEach(); if(next>=indices.length&&active===0)resolve(); else pump(); };
+      im.onload=fin; im.onerror=fin; im.src=urls[idx]; } };
+    pump(); }); }
+  const coarse=[]; for(let i=0;i<N;i+=8) coarse.push(i); if(coarse[coarse.length-1]!==N-1) coarse.push(N-1);
+  const coarseSet=new Set(coarse), fine=[]; for(let i=0;i<N;i++) if(!coarseSet.has(i)) fine.push(i);
+
+  // boot
+  freezeWidths(); measure(); show(0); render();
+  if(forcedP===null) lockScroll();
+  // re-freeze after webfont settles (width can shift)
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ freezeWidths(); measure(); render(); });
+  let done=0;
+  loadSet(coarse,()=>{ done++; fill.style.width=Math.round((done/coarse.length)*100)+'%'; })
+    .then(()=>{ gateDone=true; gate.classList.add('ready'); gateLbl.textContent='scroll to begin'; gateChev.style.display='';
+      unlockScroll(); measure(); render(); return loadSet(fine,null); });
+})();
+</script>
+</body>
+</html>

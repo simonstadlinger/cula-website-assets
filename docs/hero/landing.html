@@ -219,7 +219,7 @@
     leftLine = cx - k*COARSE; rightLine = cx + k*COARSE;
     const bk = Math.max(2, k-1);                       // scrubber box: one cell narrower each side
     // landing box: centered vertically, top/bottom on fine lines, edges on the content margins
-    const lh = 8*FINE, bh = 88;                        // landing 128px -> scrubber 88px (shrinks vertically)
+    const lh = COARSE, bh = 88;                        // landing box = one coarse cell (160) -> scrubber 88px
     landingRect = { left:leftLine, top:cy-lh/2, width:rightLine-leftLine, height:lh };
     bottomRect  = { left:cx-bk*COARSE, top:vh-32-bh, width:2*bk*COARSE, height:bh };
     // align controls to the same boundaries
@@ -227,8 +227,10 @@
     menu.style.right = (vw-rightLine)+'px';
     hub.style.left  = leftLine+'px';
     roles.style.right = (vw-rightLine)+'px';
-    // center the grids so a line passes through the viewport centre
-    const pos = `${cx%COARSE}px 0, 0 ${cy%COARSE}px, ${cx%FINE}px 0, 0 ${cy%FINE}px`;
+    // grid: coarse vertical LINE through centre (so box edges land on coarse lines), but coarse
+    // horizontals offset half a cell so the page centre is the MIDDLE of a coarse row that holds the box
+    const coarseY = ((cy - COARSE/2) % COARSE + COARSE) % COARSE;
+    const pos = `${cx%COARSE}px 0, 0 ${coarseY}px, ${cx%FINE}px 0, 0 ${cy%FINE}px`;
     landing.style.backgroundPosition = pos;
     gridDark.style.backgroundPosition = pos;
     gate.style.top = (landingRect.top + landingRect.height + 28) + 'px';

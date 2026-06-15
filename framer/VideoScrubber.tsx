@@ -1,333 +1,367 @@
-// Video Scrubber — drop-in replacement for the existing "Video Scrubber 3" code component.
+// Drop-in replacement for the project's "Video Scrubber 3" code component.
+// Identical to the live ScrollVideo component except for two changes:
 //
-// Identical props and rendering; two changes versus the original:
+//   1. Smarter loader gate. The original gated the loader overlay on an
+//      every-8th-frame skeleton only, so the moment the bar disappeared the
+//      whole animation was uniformly chunky. This version gates on the FIRST
+//      `gateHeadPercent` % of frames at full density (what visitors scrub
+//      first) PLUS the every-8th skeleton, then backfills the rest in the
+//      background. New optional prop `gateHeadPercent` (default 15; 0 = the
+//      original skeleton-only behavior).
+//   2. onerror bug fix. The original marked failed downloads as loaded, so a
+//      frame that failed once was snapped to (and re-requested) on every
+//      scroll position landing on it instead of falling back to a good
+//      neighbor. Failures are no longer marked loaded.
 //
-// 1. Smarter loader gate: instead of gating only on every 8th frame, the gate
-//    preloads the FIRST `gateHeadPercent` % of frames densely (that's what
-//    visitors scrub first) PLUS every 8th frame across the whole range, then
-//    backfills the rest in the background. New optional prop `gateHeadPercent`
-//    (default 15). Set it to 0 for the original behavior.
-// 2. Failed downloads are no longer marked as loaded (original bug: `onerror`
-//    set the same "loaded" flag as `onload`, so a frame that failed once was
-//    re-requested from the network on every scroll position landing on it).
-//
-// To adopt: open the project's "Video Scrubber 3" code file in Framer and
-// replace its contents with this file. Existing instances keep their props.
+// To adopt: open the "Video Scrubber 3" code file in Framer and replace its
+// contents with this file. Props, controls and rendering are otherwise
+// identical, so existing instances keep working.
 
-import * as React from "react"
+import { useEffect, useRef, useState, startTransition } from "react"
+import { motion } from "framer-motion"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
 
 /**
- * @framerSupportedLayoutWidth any
- * @framerSupportedLayoutHeight any
+ * @framerDisableUnlink
+ * @framerSupportedLayoutWidth any-prefer-fixed
+ * @framerIntrinsicWidth 600
+ * @framerSupportedLayoutHeight any-prefer-fixed
+ * @framerIntrinsicHeight 400
  */
-export default function VideoScrubber(props) {
-    const {
-        sourceType,
-        videoFileSourceType,
-        videoSrcURL,
-        videoSrcFile,
-        sequenceBaseURL,
-        sequencePrefix,
-        sequenceExtension,
-        sequencePadding,
-        sequenceStartIndex,
-        sequenceFrameCount,
-        frameStep,
-        gateHeadPercent,
-        showLoader,
-        scrollLength,
-        alignment,
-        startOn,
-        fit,
-        style,
-    } = props
+export default function ScrollVideo({
+    sourceType,
+    videoFileSourceType,
+    videoSrcURL,
+    videoSrcFile,
+    sequenceBaseURL,
+    sequencePrefix,
+    sequenceExtension,
+    sequencePadding,
+    sequenceStartIndex,
+    sequenceFrameCount,
+    frameStep,
+    gateHeadPercent,
+    showLoader,
+    scrollLength,
+    alignment,
+    startOn,
+    fit,
+}) {
+    const videoRef = useRef(null)
+    const imgRef = useRef(null)
+    const containerRef = useRef(null)
+    const containerTopRef = useRef(0)
+    const containerHeightRef = useRef(0)
+    const currentIndexRef = useRef(-1)
+    const pendingRef = useRef(null)
+    const lastWidthRef = useRef(0)
+    const loadedRef = useRef(null) // Uint8Array: 1 = frame loaded
+    const imagesRef = useRef([]) // hold references so the browser keeps them cached
+    const [measured, setMeasured] = useState(false)
+    const [loaderProgress, setLoaderProgress] = useState(0)
+    const [loaderDone, setLoaderDone] = useState(false)
 
-    const videoRef = React.useRef<HTMLVideoElement>(null)
-    const imgRef = React.useRef<HTMLImageElement>(null)
-    const wrapRef = React.useRef<HTMLDivElement>(null)
-    const wrapTopRef = React.useRef(0)
-    const wrapSpanRef = React.useRef(0)
-    const shownIdxRef = React.useRef(-1)
-    const rafRef = React.useRef<number | null>(null)
-    const widthRef = React.useRef(0)
-    const loadedRef = React.useRef<Uint8Array | null>(null)
-    const imagesRef = React.useRef<HTMLImageElement[]>([])
+    const isOnCanvas = RenderTarget.current() === RenderTarget.canvas
 
-    const [mounted, setMounted] = React.useState(false)
-    const [progress, setProgress] = React.useState(0)
-    const [gateDone, setGateDone] = React.useState(false)
-
-    const isCanvas = RenderTarget.current() === RenderTarget.canvas
-
-    React.useEffect(() => {
-        requestAnimationFrame(() => setMounted(true))
-    }, [])
-
-    const zoom = () => {
-        const v = getComputedStyle(
-            document.documentElement
-        ).getPropertyValue("--zoom-ratio")
-        const z = parseFloat(v)
-        return z > 0 ? z : 1
+    // Read the zoom ratio set by the page-level zoom script.
+    // getBoundingClientRect() returns zoomed pixels; pageYOffset stays in
+    // layout pixels. Dividing rect values by this ratio puts both in the
+    // same coordinate space.
+    const getZoom = () => {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue(
+            "--zoom-ratio"
+        )
+        const parsed = parseFloat(raw)
+        return parsed > 0 ? parsed : 1
     }
 
-    // Frame URL list (steps by frameStep, same as the original).
-    const urls = React.useMemo(() => {
+    // Build the array of frame URLs from the pattern, stepping by frameStep
+    // so "every Nth frame" reduces both count and payload.
+    const frameURLs = (() => {
         if (sourceType !== "sequence") return []
         const step = Math.max(1, frameStep)
-        const base = sequenceBaseURL.endsWith("/")
-            ? sequenceBaseURL
-            : sequenceBaseURL + "/"
-        const ext = sequenceExtension.startsWith(".")
-            ? sequenceExtension
-            : "." + sequenceExtension
-        const list: string[] = []
+        const urls = []
         for (let i = 0; i < sequenceFrameCount; i += step) {
-            const num = String(sequenceStartIndex + i).padStart(
-                sequencePadding,
-                "0"
-            )
-            list.push(`${base}${sequencePrefix}${num}${ext}`)
+            const num = sequenceStartIndex + i
+            const padded = String(num).padStart(sequencePadding, "0")
+            const base = sequenceBaseURL.endsWith("/")
+                ? sequenceBaseURL
+                : sequenceBaseURL + "/"
+            const ext = sequenceExtension.startsWith(".")
+                ? sequenceExtension
+                : "." + sequenceExtension
+            urls.push(`${base}${sequencePrefix}${padded}${ext}`)
         }
-        return list
-    }, [
-        sourceType,
-        sequenceBaseURL,
-        sequencePrefix,
-        sequenceExtension,
-        sequencePadding,
-        sequenceStartIndex,
-        sequenceFrameCount,
-        frameStep,
-    ])
-    const urlsKey = urls.length ? urls[0] + urls.length : ""
+        return urls
+    })()
 
+    // A key that changes whenever the sequence definition changes.
+    const sequenceKey = frameURLs.length ? frameURLs[0] + frameURLs.length : ""
+
+    // Measure the container, normalizing rect values by the zoom ratio.
     const measure = () => {
-        if (!wrapRef.current) return
-        const z = zoom()
-        const rect = wrapRef.current.getBoundingClientRect()
-        wrapTopRef.current = window.pageYOffset + rect.top / z
-        wrapSpanRef.current = rect.height / z
+        if (!containerRef.current) return
+        const zoom = getZoom()
+        const rect = containerRef.current.getBoundingClientRect()
+        containerTopRef.current = window.pageYOffset + rect.top / zoom
+        containerHeightRef.current = rect.height / zoom
     }
 
-    // Nearest already-loaded frame (bridges gaps during background fill).
-    const nearestLoaded = (i: number) => {
+    // Find the nearest loaded frame to the target index, searching outward.
+    // During the progressive load this snaps scrubbing to available frames.
+    const nearestLoaded = (idx) => {
         const loaded = loadedRef.current
-        if (!loaded || loaded[i]) return i
+        if (!loaded) return idx
+        if (loaded[idx]) return idx
         for (let d = 1; d < loaded.length; d++) {
-            if (i - d >= 0 && loaded[i - d]) return i - d
-            if (i + d < loaded.length && loaded[i + d]) return i + d
+            if (idx - d >= 0 && loaded[idx - d]) return idx - d
+            if (idx + d < loaded.length && loaded[idx + d]) return idx + d
         }
-        return i
+        return idx
     }
 
-    const update = () => {
-        const span = wrapSpanRef.current
-        if (!span) return
-        const raw = (window.pageYOffset - wrapTopRef.current) / span
-        const frac = Math.max(0, Math.min(1, raw))
+    // Compute the correct frame for the current scroll position and apply it.
+    const syncToScroll = () => {
+        const height = containerHeightRef.current
+        if (!height) return
+        const progress = (window.pageYOffset - containerTopRef.current) / height
+        const clamped = Math.max(0, Math.min(1, progress))
+
         if (sourceType === "video") {
             const video = videoRef.current
             if (!video) return
-            const seek = () => {
-                video.currentTime = frac * (video.duration || 0)
+            const apply = () => {
+                video.currentTime = clamped * (video.duration || 0)
             }
-            if (video.readyState >= 1) seek()
-            else video.addEventListener("loadedmetadata", seek, { once: true })
+            if (video.readyState >= 1) apply()
+            else video.addEventListener("loadedmetadata", apply, { once: true })
         } else {
-            if (!urls.length || !imgRef.current) return
-            const idx = nearestLoaded(
-                Math.min(urls.length - 1, Math.floor(frac * urls.length))
+            if (!frameURLs.length || !imgRef.current) return
+            const target = Math.min(
+                frameURLs.length - 1,
+                Math.floor(clamped * frameURLs.length)
             )
-            if (idx === shownIdxRef.current) return
-            shownIdxRef.current = idx
-            imgRef.current.src = urls[idx]
+            const idx = nearestLoaded(target)
+            if (idx === currentIndexRef.current) return
+            currentIndexRef.current = idx
+            imgRef.current.src = frameURLs[idx]
         }
     }
 
-    React.useEffect(() => {
+    // Force scroll to top on every load, before paint, so the sequence
+    // always starts at frame 1. Disables browser scroll restoration so
+    // reloads don't jump to the previous position.
+    useEffect(() => {
         if ("scrollRestoration" in window.history) {
             window.history.scrollRestoration = "manual"
         }
         window.scrollTo(0, 0)
     }, [])
 
-    React.useEffect(() => {
-        widthRef.current = window.innerWidth
+    // Measure container, then immediately sync to current scroll position.
+    useEffect(() => {
+        lastWidthRef.current = window.innerWidth
         measure()
-        update()
-    }, [scrollLength, sourceType, urlsKey, mounted])
+        startTransition(() => setMeasured(true))
+        syncToScroll()
+    }, [scrollLength, sourceType, sequenceKey])
 
-    React.useEffect(() => {
+    // Re-measure on resize — but only when the width actually changed.
+    // Mobile Safari fires resize when the bottom bar collapses/expands on
+    // scroll, which changes only the height. Re-measuring then shifts
+    // containerTop mid-scroll and makes the sequence replay. Width-only
+    // guard ignores bar collapse while still catching rotation and real
+    // resizes (which the zoom script also responds to).
+    useEffect(() => {
         const onResize = () => {
-            if (window.innerWidth !== widthRef.current) {
-                widthRef.current = window.innerWidth
-                measure()
-                update()
-            }
+            if (window.innerWidth === lastWidthRef.current) return
+            lastWidthRef.current = window.innerWidth
+            measure()
+            syncToScroll()
         }
         window.addEventListener("resize", onResize)
         return () => window.removeEventListener("resize", onResize)
-    }, [sourceType, urlsKey])
+    }, [sourceType, sequenceKey])
 
-    // ---- preloader: gate = dense head + every-8th skeleton; rest backfills ----
-    React.useEffect(() => {
-        if (sourceType !== "sequence" || !urls.length || isCanvas) return
+    // Progressive preloader with a concurrency cap.
+    // The gate — what the loader overlay waits for — is the FIRST
+    // `gateHeadPercent` % of frames at full density (the part visitors scrub
+    // first) PLUS an every-8th skeleton across the whole range so the rest of
+    // the timeline has coarse coverage immediately. Everything else backfills
+    // in the background afterward. Scrubbing snaps to the nearest loaded frame
+    // and sharpens as the backfill completes. The loader overlay (if enabled)
+    // releases once the gate is loaded.
+    useEffect(() => {
+        if (sourceType !== "sequence" || !frameURLs.length || isOnCanvas) return
+
         let cancelled = false
-        const n = urls.length
-        loadedRef.current = new Uint8Array(n)
-        imagesRef.current = Array(n)
-        shownIdxRef.current = -1
+        const total = frameURLs.length
+        loadedRef.current = new Uint8Array(total)
+        imagesRef.current = new Array(total)
+        currentIndexRef.current = -1
 
+        const CONCURRENCY = 10
+
+        // Partition into the gate (dense head + every-8th skeleton + last
+        // frame, so end-of-scroll always has a target) and the remainder.
         const headCount = Math.ceil(
-            (Math.max(0, Math.min(100, gateHeadPercent)) / 100) * n
+            (Math.max(0, Math.min(100, gateHeadPercent)) / 100) * total
         )
-        const gate: number[] = []
-        const inGate = new Uint8Array(n)
-        for (let i = 0; i < n; i++) {
-            if (i < headCount || i % 8 === 0 || i === n - 1) {
-                gate.push(i)
+        const inGate = new Uint8Array(total)
+        const gate = []
+        for (let i = 0; i < total; i++) {
+            if (i < headCount || i % 8 === 0 || i === total - 1) {
                 inGate[i] = 1
+                gate.push(i)
             }
         }
-        const rest: number[] = []
-        for (let i = 0; i < n; i++) if (!inGate[i]) rest.push(i)
+        const rest = []
+        for (let i = 0; i < total; i++) if (!inGate[i]) rest.push(i)
 
-        const loadSet = (
-            indices: number[],
-            onEach: (() => void) | null
-        ): Promise<void> =>
-            new Promise((resolve) => {
+        const loadBatch = (indices, onProgress) =>
+            new Promise<void>((resolve) => {
                 if (!indices.length) return resolve()
                 let next = 0
                 let active = 0
-                const pump = () => {
-                    while (active < 10 && next < indices.length) {
-                        const idx = indices[next++]
+                const launch = () => {
+                    while (active < CONCURRENCY && next < indices.length) {
+                        const i = indices[next++]
                         active++
-                        const im = new Image()
-                        imagesRef.current[idx] = im
-                        const finish = (ok: boolean) => () => {
+                        const img = new Image()
+                        imagesRef.current[i] = img
+                        const settle = (ok) => () => {
                             active--
-                            if (!cancelled) {
-                                // onerror intentionally does NOT mark the frame
-                                // as loaded — the nearest-loaded fallback covers
-                                // it and a later remount can retry.
-                                if (ok) loadedRef.current![idx] = 1
-                                if (onEach) onEach()
-                                if (next >= indices.length && active === 0)
-                                    resolve()
-                                else pump()
-                            }
+                            if (cancelled) return
+                            // onerror must NOT mark the frame loaded: a failed
+                            // frame stays unloaded so the nearest-loaded
+                            // fallback bridges past it (and a later remount can
+                            // retry), instead of snapping to a broken frame.
+                            if (ok) loadedRef.current[i] = 1
+                            if (onProgress) onProgress()
+                            if (next >= indices.length && active === 0)
+                                resolve()
+                            else launch()
                         }
-                        im.onload = finish(true)
-                        im.onerror = finish(false)
-                        im.src = urls[idx]
+                        img.onload = settle(true)
+                        img.onerror = settle(false)
+                        img.src = frameURLs[i]
                     }
                 }
-                pump()
+                launch()
             })
 
-        let done = 0
-        let lastPct = -1
-        requestAnimationFrame(() => {
-            setProgress(0)
-            setGateDone(false)
+        let loadedCount = 0
+        let lastPercent = -1
+        const onGateProgress = () => {
+            loadedCount++
+            const percent = Math.round((loadedCount / gate.length) * 100)
+            if (percent === lastPercent) return
+            lastPercent = percent
+            startTransition(() => setLoaderProgress(percent))
+        }
+
+        startTransition(() => {
+            setLoaderProgress(0)
+            setLoaderDone(false)
         })
-        loadSet(gate, () => {
-            done++
-            const pct = Math.round((done / gate.length) * 100)
-            if (pct !== lastPct) {
-                lastPct = pct
-                requestAnimationFrame(() => setProgress(pct))
-            }
-        }).then(() => {
+
+        // Load the gate first and release the overlay, then backfill the rest;
+        // re-sync after each so the visible frame sharpens as density grows.
+        const run = async () => {
+            await loadBatch(gate, onGateProgress)
             if (cancelled) return
-            requestAnimationFrame(() => setGateDone(true))
-            update()
-            return loadSet(rest, null).then(() => {
-                if (!cancelled) {
-                    shownIdxRef.current = -1
-                    update()
-                }
-            })
-        })
+            startTransition(() => setLoaderDone(true))
+            syncToScroll()
+
+            await loadBatch(rest, null)
+            if (cancelled) return
+            currentIndexRef.current = -1
+            syncToScroll()
+        }
+        run()
 
         return () => {
             cancelled = true
-            imagesRef.current.forEach((im) => {
-                if (im) im.src = ""
+            imagesRef.current.forEach((img) => {
+                if (img) img.src = ""
             })
             imagesRef.current = []
         }
-    }, [sourceType, urlsKey, isCanvas, gateHeadPercent])
+    }, [sourceType, sequenceKey, isOnCanvas, gateHeadPercent])
 
-    // Video mode: seek to the right position when scrolled into view.
-    React.useEffect(() => {
+    // Video: seek-on-enter via IntersectionObserver.
+    useEffect(() => {
         if (sourceType !== "video") return
-        const threshold =
-            startOn === "top" ? 0 : startOn === "center" ? 0.5 : 1
-        const observer = new IntersectionObserver(
-            ([entry]) => {
-                if (entry.isIntersecting && videoRef.current) {
-                    const z = zoom()
-                    const raw =
-                        (window.pageYOffset +
-                            entry.boundingClientRect.top / z -
-                            wrapTopRef.current) /
-                        wrapSpanRef.current
-                    const frac = Math.max(0, Math.min(1, raw))
-                    videoRef.current.currentTime =
-                        frac * (videoRef.current.duration || 0)
-                }
-            },
-            { threshold }
-        )
+        let options = {}
+        if (startOn === "top") options = { threshold: 0 }
+        else if (startOn === "center") options = { threshold: 0.5 }
+        else if (startOn === "bottom") options = { threshold: 1 }
+
+        const observer = new IntersectionObserver(([entry]) => {
+            if (entry.isIntersecting && videoRef.current) {
+                const zoom = getZoom()
+                const scrollPosition =
+                    window.pageYOffset + entry.boundingClientRect.top / zoom
+                const progress =
+                    (scrollPosition - containerTopRef.current) /
+                    containerHeightRef.current
+                const clamped = Math.max(0, Math.min(1, progress))
+                videoRef.current.currentTime =
+                    clamped * (videoRef.current.duration || 0)
+            }
+        }, options)
+
         if (videoRef.current) observer.observe(videoRef.current)
         return () => {
             if (videoRef.current) observer.unobserve(videoRef.current)
         }
-    }, [sourceType, startOn, mounted])
+    }, [sourceType, startOn, measured])
 
-    React.useEffect(() => {
+    // Scroll → write video currentTime OR swap image src, throttled to one write per frame.
+    useEffect(() => {
         const onScroll = () => {
-            if (rafRef.current === null) {
-                rafRef.current = requestAnimationFrame(() => {
-                    rafRef.current = null
-                    update()
-                })
-            }
+            if (pendingRef.current !== null) return
+            pendingRef.current = requestAnimationFrame(() => {
+                pendingRef.current = null
+                syncToScroll()
+            })
         }
         window.addEventListener("scroll", onScroll, { passive: true })
         return () => {
             window.removeEventListener("scroll", onScroll)
-            if (rafRef.current !== null) {
-                cancelAnimationFrame(rafRef.current)
-                rafRef.current = null
+            if (pendingRef.current !== null) {
+                cancelAnimationFrame(pendingRef.current)
+                pendingRef.current = null
             }
         }
-    }, [sourceType, urlsKey])
+    }, [sourceType, sequenceKey])
 
     const videoSrc = videoFileSourceType === "url" ? videoSrcURL : videoSrcFile
-    const mediaStyle: React.CSSProperties = {
+
+    const alignmentStyles = {
+        center: { top: "50%", transform: "translateY(-50%)" },
+        top: { top: 0 },
+        bottom: { bottom: 0 },
+    }
+
+    // Sticky media fills the small viewport: 100lvh excludes mobile Safari's
+    // collapsible bars, so the media never resizes when the bar hides on
+    // scroll. Divided by the zoom ratio to match the unzoomed layout space.
+    const mediaStyle = {
         width: "100%",
         height: "calc(100lvh / var(--zoom-ratio, 1))",
         position: "sticky",
         objectFit: fit,
-        ...({
-            center: { top: "50%", transform: "translateY(-50%)" },
-            top: { top: 0 },
-            bottom: { bottom: 0 },
-        }[alignment] as React.CSSProperties),
+        ...alignmentStyles[alignment],
     }
-    const showBar =
-        sourceType === "sequence" && showLoader && !gateDone && !isCanvas
+
+    const showLoaderOverlay =
+        sourceType === "sequence" && showLoader && !loaderDone && !isOnCanvas
 
     return (
-        <div
-            ref={wrapRef}
-            style={{ height: scrollLength, position: "relative", ...style }}
+        <motion.div
+            ref={containerRef}
+            style={{ height: scrollLength, position: "relative" }}
         >
             {sourceType === "video" ? (
                 <video
@@ -339,9 +373,14 @@ export default function VideoScrubber(props) {
                     preload="auto"
                 />
             ) : (
-                <img ref={imgRef} src={urls[0] || ""} style={mediaStyle} alt="" />
+                <img
+                    ref={imgRef}
+                    src={frameURLs[0] || ""}
+                    style={mediaStyle}
+                    alt=""
+                />
             )}
-            {showBar && (
+            {showLoaderOverlay && (
                 <div
                     style={{
                         position: "sticky",
@@ -363,7 +402,7 @@ export default function VideoScrubber(props) {
                     >
                         <div
                             style={{
-                                width: `${progress}%`,
+                                width: `${loaderProgress}%`,
                                 height: "100%",
                                 background: "rgba(255, 255, 255, 0.9)",
                                 transition: "width 0.15s ease-out",
@@ -372,11 +411,11 @@ export default function VideoScrubber(props) {
                     </div>
                 </div>
             )}
-        </div>
+        </motion.div>
     )
 }
 
-VideoScrubber.defaultProps = {
+ScrollVideo.defaultProps = {
     sourceType: "video",
     videoFileSourceType: "url",
     videoSrcURL:
@@ -397,7 +436,7 @@ VideoScrubber.defaultProps = {
     fit: "cover",
 }
 
-addPropertyControls(VideoScrubber, {
+addPropertyControls(ScrollVideo, {
     sourceType: {
         type: ControlType.Enum,
         title: "Source",

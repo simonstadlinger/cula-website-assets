@@ -7,9 +7,13 @@ WebP frames extracted from the Cula Technologies website animations (source: 192
 ## Hero scroll animation — performance work (June 2026)
 
 The hero on [cula-tech.framer.website](https://cula-tech.framer.website/) is a scroll-scrubbed
-image sequence ("Video Scrubber" Framer code component). It currently stutters because the
-component is configured with `frameStep: 8` — only 178 of 1,417 frames are shown. The skip was
-necessary because the original frames average **275 KB** (381 MB for the full set).
+image sequence (the "Video Scrubber 3" Framer code component, exported as `ScrollVideo`). It is
+currently configured with `frameStep: 1` on the original `hero-animation` set (webp q90,
+**275 KB** average), so a visitor downloads every one of the 1,417 frames — roughly **390 MB**.
+The originals were never optimized for the web, which forces a long wait before the animation is
+ready and a heavy ongoing transfer. The fix is a lighter frame set so a low `frameStep` (smooth
+motion) stays affordable: at full quality you either pay ~390 MB at step 1 or accept the choppiness
+of a high step on the originals — the optimized sets below remove that trade-off.
 
 ### What we did
 
@@ -55,10 +59,12 @@ Note: AVIF at full 1920 px costs the same as webp downscaled to 1600 px — full
 | `hero-frames/mobile-avif-810` | avif q45 | 420×810 | 16 KB | 11 MB |
 
 **Reference — what the live site loads today:** `hero-animation` originals (webp q90, 275 KB avg)
-at `frameStep: 8` = 49 MB for 178 frames (4× choppier than step 2, and every frame is 2.4–11×
-heavier than the optimized sets).
+at `frameStep: 1` = **~390 MB** for all 1,417 frames, nothing skipped. (It was previously
+`frameStep: 8` = 49 MB for 178 frames, which was 4× choppier than step 2.) Either way every
+frame is 2.4–11× heavier than the optimized sets.
 
-“Total @ step 2” = what a visitor downloads in the background; the loader gate is ~1/8 of that.
+"Total @ step 2" = what a visitor downloads in the background; the loader gate (dense head +
+every-8th skeleton) is roughly a quarter of that before the animation becomes interactive.
 
 ### Instructions for the agency (Framer editor)
 
@@ -85,8 +91,9 @@ maximum compatibility, the `…webp…` sets are drop-in equivalents at ~30 % mo
 **Optional component upgrade: [`framer/VideoScrubber.tsx`](framer/VideoScrubber.tsx)**
 
 A drop-in replacement for the "Video Scrubber 3" code file (identical props, controls, and
-rendering — existing instances keep working). To adopt: open the code component in Framer and
-replace the file contents. It fixes/improves two things:
+rendering, and it keeps the same `ScrollVideo` export so existing instances stay bound). To
+adopt: open the code component in Framer and replace the file contents. It fixes/improves two
+things:
 
 1. **Smarter loader gate.** The original gates the loading bar only on every 8th frame, so
    right after the bar disappears the animation is uniformly chunky. The replacement preloads
@@ -102,8 +109,11 @@ replace the file contents. It fixes/improves two things:
 **Adopting / rollback**
 - The sets live on branch [`hero-v2-preview`](../../tree/hero-v2-preview). Merge it into `main`
   (or reference `@hero-v2-preview` directly) before pointing the site at `@main` URLs.
-- For production, pin a commit instead of a moving ref
-  (`…/cula-website-assets@<commit-sha>/…`) — jsDelivr caches branch refs for up to 7 days.
+- For production, pin a commit or tag instead of a moving branch ref
+  (`…/cula-website-assets@<commit-sha>/…`). jsDelivr only marks commit/tag refs as immutable
+  (`Cache-Control: max-age=31536000, immutable`); a branch ref like `@main` is held only ~12 h
+  at the CDN edge (`s-maxage=43200`), so frames go cold and reload slowly (~300 ms–1 s each)
+  roughly every day until the edge re-warms.
 - Rollback at any time = revert the props; the original `hero-animation/` folder is untouched.
 
 ### Live comparison page
@@ -121,7 +131,7 @@ Use the panel (top-left) or URL parameters:
 | `len` | px | `scrollLength` — `5000` proposed, `3930` today |
 | `head` | `0`–`100` | % of frames the loader gates densely from the start (see component upgrade below) — `15` proposed, `0` = current component behavior |
 | `lock` | `1` \| `0` | blocking loading screen — when on, scroll is locked behind a centered loading bar until the gate is ready (lets you feel the wait a visitor would experience). Default on, except in `live` mode. The current production component does **not** block (`0`). |
-| `live` | `1` | reference mode: exactly what the live site loads today (original frames, step 8, no dense head, no blocking screen) |
+| `live` | `1` | reference mode: exactly what the live site loads today (original frames, step 1, no dense head, no blocking screen) |
 
 The panel shows live stats: frames loaded, loader-gate time, total MB downloaded.
 

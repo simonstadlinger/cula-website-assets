@@ -112,7 +112,7 @@
   const setGroup = cfg.live ? SETS.live : SETS[vp.sets];
   if (!setGroup[cfg.set]) cfg.set = cfg.live ? 'webp-full' : vp.defaults.set;
   if (cfg.live) {
-    cfg.step = parseInt(qs.get('step') || '8', 10); // live site uses step 8
+    cfg.step = parseInt(qs.get('step') || '1', 10); // live site currently uses step 1 (every frame)
     cfg.head = parseInt(qs.get('head') || '0', 10); // and gates on the skeleton only
     if (!qs.has('lock')) cfg.lock = false; // the real site doesn't block scroll while loading
   }

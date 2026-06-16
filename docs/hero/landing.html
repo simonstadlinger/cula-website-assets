@@ -217,11 +217,12 @@
     // content margins: largest ±k coarse cells leaving >= MIN_MARGIN, on grid lines
     const k = Math.max(2, Math.floor((cx - MIN_MARGIN) / COARSE));
     leftLine = cx - k*COARSE; rightLine = cx + k*COARSE;
-    const bk = Math.max(2, k-1);                       // scrubber box: one cell narrower each side
-    // landing box: centered vertically, top/bottom on fine lines, edges on the content margins
-    const lh = COARSE, bh = 88;                        // landing box = one coarse cell (160) -> scrubber 88px
-    landingRect = { left:leftLine, top:cy-lh/2, width:rightLine-leftLine, height:lh };
-    bottomRect  = { left:cx-bk*COARSE, top:vh-32-bh, width:2*bk*COARSE, height:bh };
+    const bk = Math.max(2, k-1);                       // box is bk cells each side (one coarse step narrower than the content margins)
+    // box: one coarse cell tall, bk cells wide each side — IDENTICAL geometry in both states, so the morph is a
+    // pure vertical translation (no width/height transform); only `top` changes (centre -> 32px above the bottom)
+    const boxH = COARSE, halfW = bk*COARSE;
+    landingRect = { left:cx-halfW, top:cy-boxH/2, width:2*halfW, height:boxH };
+    bottomRect  = { left:cx-halfW, top:vh-32-boxH, width:2*halfW, height:boxH };
     // align controls to the same boundaries
     logo.style.left = leftLine+'px';
     menu.style.right = (vw-rightLine)+'px';
@@ -251,9 +252,10 @@
     claim.style.top    = lerp(landingRect.top,    bottomRect.top,    e)+'px';
     claim.style.width  = lerp(landingRect.width,  bottomRect.width,  e)+'px';
     claim.style.height = lerp(landingRect.height, bottomRect.height, e)+'px';
-    const vpad = lerp(22, 13, e);                                         // padding eases in with the shrink
-    claim.style.paddingTop = vpad+'px'; claim.style.paddingBottom = vpad+'px';
-    claim.style.borderColor = 'rgba(226,232,240,'+(1-e).toFixed(3)+')';   // hairline fades as it floats free
+    claim.style.paddingTop = '22px'; claim.style.paddingBottom = '22px';  // constant — box no longer shrinks, so no padding ease
+    claim.style.borderRadius = lerp(0, 12, e).toFixed(2)+'px';            // square (landing) -> 12px rounded (bottom)
+    const br=Math.round(lerp(226,107,e)), bg=Math.round(lerp(232,122,e)), bb=Math.round(lerp(240,144,e));
+    claim.style.borderColor = `rgb(${br},${bg},${bb})`;                   // light hairline (#E2E8F0) -> darker stroke (#6B7A90)
     let op=1; if(sp>0.92) op=1-smooth((sp-0.92)/0.08);
     claim.style.opacity = op.toFixed(3);
   }

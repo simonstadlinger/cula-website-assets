@@ -168,7 +168,7 @@
   const qs = new URLSearchParams(location.search);
   const cfg = {
     base: qs.get('base') ||
-      'https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@hero-v2-preview/hero-frames/desktop-avif-1920',
+      'https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@main/hero/desktop',
     prefix: 'frame_', ext: qs.get('ext') || '.avif', pad: 4, startIndex: 1,
     frameCount: parseInt(qs.get('count') || '1417', 10),
     frameStep:  parseInt(qs.get('step')  || '2', 10),

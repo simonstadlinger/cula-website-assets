@@ -31,32 +31,28 @@ of a high step on the originals — the optimized sets below remove that trade-o
    loading & scrubbing behavior, so every set/step/scroll-length combination can be felt and
    measured before touching the Framer project.
 
-### Frame sets
+### Frame sets — the shipped sets
 
-All sets contain frames `frame_0001` … `frame_1418` (the site uses `sequenceFrameCount: 1417`,
-`sequenceStartIndex: 1`, `sequencePadding: 4`, `sequencePrefix: frame_`).
+Three AVIF sets, one per breakpoint, all `avifenc -s 6 -q 45`. Each contains frames
+`frame_0001` … `frame_1418` (the site uses `sequenceFrameCount: 1417`, `sequenceStartIndex: 1`,
+`sequencePadding: 4`, `sequencePrefix: frame_`).
 
 Served via jsDelivr: `https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@<ref>/<folder>`
 
-**Desktop & tablet** (full 16:9, 1920×1080 source)
-
-| folder | format | size | avg/frame | total @ step 2 |
+| folder | breakpoint | dimensions | avg/frame | total @ step 2 |
 |---|---|---|---|---|
-| `hero-animation-v2` | webp q60 | 1920×1080 | 115 KB | 79 MB |
-| `hero-frames/desktop-webp-1600` | webp q60 | 1600×900 | 79 KB | 55 MB |
-| `hero-frames/desktop-avif-1920` | avif q45 | 1920×1080 | 78 KB | **54 MB** |
-| `hero-frames/desktop-avif-1600` | avif q45 | 1600×900 | 60 KB | 42 MB |
+| `hero/desktop` | desktop ≥1200 px | 1920×1080 (full 16:9) | 78 KB | **54 MB** |
+| `hero/tablet`  | tablet 768–1199 px | 1600×900 (full 16:9) | 60 KB | **42 MB** |
+| `hero/mobile`  | phone <768 px | 560×1080 (pre-cropped to cover) | 24 KB | **16 MB** |
 
-Note: AVIF at full 1920 px costs the same as webp downscaled to 1600 px — full resolution for free.
-
-**Phone** (center-cropped to the cover region, 560×1080)
-
-| folder | format | size | avg/frame | total @ step 2 |
-|---|---|---|---|---|
-| `hero-frames/mobile-webp-1080` | webp q60 | 560×1080 | 35 KB | 24 MB |
-| `hero-frames/mobile-webp-810` | webp q60 | 420×810 | 21 KB | 15 MB |
-| `hero-frames/mobile-avif-1080` | avif q45 | 560×1080 | 24 KB | **16 MB** |
-| `hero-frames/mobile-avif-810` | avif q45 | 420×810 | 16 KB | 11 MB |
+Notes:
+- AVIF at full 1920 px costs about the same as webp downscaled to 1600 px — full resolution for free,
+  which is why AVIF won over the webp candidates that were evaluated.
+- Tablet uses the 1600 px set, **not** a mobile set: the 768–1199 px breakpoint includes landscape
+  iPads, which need the full wide frame.
+- The mobile set is center-cropped to the cover region (560×1080). The component renders with
+  `object-fit: cover`; on phones ~74 % of a full wide frame is cropped away by CSS, so cropping at
+  encode time gives the same on-screen pixels at ~⅓ of the bytes, and *sharper* than downscaling.
 
 **Reference — what the live site loads today:** `hero-animation` originals (webp q90, 275 KB avg)
 at `frameStep: 1` = **~390 MB** for all 1,417 frames, nothing skipped. (It was previously
@@ -71,22 +67,21 @@ every-8th skeleton) is roughly a quarter of that before the animation becomes in
 No component code changes are needed — the existing Video Scrubber supports everything via
 props. On the hero's Video Scrubber instance, change per breakpoint:
 
-**Desktop (≥1200 px)** — recommended set: `desktop-avif-1920` (or `hero-animation-v2` to stay on webp)
+**Desktop (≥1200 px)** — set `hero/desktop`
 
 | prop | value |
 |---|---|
-| `sequenceBaseURL` | `https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@main/hero-frames/desktop-avif-1920` |
-| `sequenceExtension` | `.avif` (or `.webp` for the webp sets) |
+| `sequenceBaseURL` | `https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@main/hero/desktop` |
+| `sequenceExtension` | `.avif` |
 | `frameStep` | **2** |
 | `scrollLength` | **5000** (was 3930 — slower motion per pixel reads as smoother; the headline overlay switches at fractions of the region, so it stays in sync) |
 
-**Tablet (768–1199 px)** — same as desktop but `…/hero-frames/desktop-avif-1600` (landscape iPads need wide frames; do not use a mobile set here).
+**Tablet (768–1199 px)** — same as desktop but `…/hero/tablet` (1600 px; landscape iPads need wide frames; do not use the mobile set here).
 
-**Phone (<768 px)** — `…/hero-frames/mobile-avif-1080`, `frameStep: 2`. The frames are pre-cropped
+**Phone (<768 px)** — `…/hero/mobile`, `frameStep: 2`. The frames are pre-cropped
 to the cover region, so the result looks identical to today, just sharper and far lighter.
 
-All other props stay unchanged. AVIF is supported by all browsers since early 2023; if you prefer
-maximum compatibility, the `…webp…` sets are drop-in equivalents at ~30 % more bytes.
+All other props stay unchanged. AVIF is supported by all browsers since early 2023.
 
 **Optional component upgrade: [`framer/VideoScrubber.tsx`](framer/VideoScrubber.tsx)**
 
@@ -107,8 +102,7 @@ things:
    `onload`; missing frames are covered by the existing nearest-loaded-frame fallback.
 
 **Adopting / rollback**
-- The sets live on branch [`hero-v2-preview`](../../tree/hero-v2-preview). Merge it into `main`
-  (or reference `@hero-v2-preview` directly) before pointing the site at `@main` URLs.
+- The `hero/` sets live on `main`. Reference `@main` URLs (above), or — recommended — pin a tag/commit.
 - For production, pin a commit or tag instead of a moving branch ref
   (`…/cula-website-assets@<commit-sha>/…`). jsDelivr only marks commit/tag refs as immutable
   (`Cache-Control: max-age=31536000, immutable`); a branch ref like `@main` is held only ~12 h
@@ -118,15 +112,15 @@ things:
 
 ### Live comparison page
 
-**https://simonstadlinger.github.io/cula-website-assets/** (served from `docs/` on the
-`hero-v2-preview` branch; replicates the Framer component's loading and scrubbing 1:1).
+**https://simonstadlinger.github.io/cula-website-assets/** (served from `docs/`;
+replicates the Framer component's loading and scrubbing 1:1).
 
 Use the panel (top-left) or URL parameters:
 
 | param | values | meaning |
 |---|---|---|
 | `vp` | `desktop` \| `tablet` \| `mobile` | viewport — tablet/mobile render in a simulated device frame with its own scrollbar (open the page on a real phone for the honest mobile test; it auto-detects) |
-| `set` | `webp-full` \| `webp-lo` \| `avif-full` \| `avif-lo` | frame set within the viewport (full = 1920 px desktop / 1080 h mobile; lo = 1600 px / 810 h) |
+| `set` | `avif-full` \| `avif-lo` | frame set within the viewport — `avif-full` = `hero/desktop` (1920) or `hero/mobile` (1080); `avif-lo` = `hero/tablet` (1600). Tablet defaults to `avif-lo`. |
 | `step` | `1`–`8` | `frameStep` — `2` is the proposal, `8` is today's value |
 | `len` | px | `scrollLength` — `5000` proposed, `3930` today |
 | `head` | `0`–`100` | % of frames the loader gates densely from the start (see component upgrade below) — `15` proposed, `0` = current component behavior |
@@ -144,18 +138,23 @@ Example comparisons:
 
 ## Contents
 
+### `hero/` — the shipped scrubber sets
+The three AVIF frame sets the site loads, one per breakpoint (`avifenc -s 6 -q 45`):
+- `hero/desktop` — 1920×1080, desktop ≥1200 px
+- `hero/tablet`  — 1600×900, tablet 768–1199 px
+- `hero/mobile`  — 560×1080 (pre-cropped to the cover region), phone <768 px
+
+Each has frames `frame_0001.avif` … `frame_1418.avif`. See the performance section above for the
+rationale and the agency wiring. Other candidate sets (webp tiers, 810 px / 960 px variants) were
+evaluated on the comparison page and dropped; only these three ship.
+
 ### `hero-animation/`
 Frames of the hero animation, exported as WebP at full **1920×1080** resolution.
 - 1418 frames, 30 fps (first 3 and last 2 frames trimmed)
 - Named sequentially: `frame_0001.webp` … `frame_1418.webp`
-- Encoded with `ffmpeg` (libwebp), quality 90, lossy — **kept as the high-quality master; the
-  live site should move to one of the optimized sets above**
-
-### `hero-animation-v2/`, `hero-animation-v2-960/`, `hero-frames/*` *(branch `hero-v2-preview`)*
-Optimized derivatives of `hero-animation/` — see the performance section above.
-WebP: `cwebp -q 60 -m 6 -sharp_yuv`. AVIF: `avifenc -s 6 -q 45`.
-(`hero-animation-v2-960/` is an early resize-only mobile set, superseded by the cropped
-`hero-frames/mobile-*` sets.)
+- Encoded with `ffmpeg` (libwebp), quality 90, lossy — **this is the set the live site still loads
+  today; kept as the production/rollback source until the agency cuts over to the `hero/` sets,
+  then it can be removed.**
 
 ### `cover-frames/`
 The **first frame** of each card animation, exported as WebP at **1920×1080**:

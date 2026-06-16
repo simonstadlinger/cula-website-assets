@@ -69,31 +69,27 @@
 (() => {
   const qs = new URLSearchParams(location.search);
 
-  // ---- frame sets (all served from jsDelivr, branch hero-v2-preview) ----
-  const CDN = 'https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@hero-v2-preview';
+  // ---- frame sets (the shipped sets, served from jsDelivr on main) ----
+  const CDN = 'https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@main';
   const SETS = {
     desktop: {
-      'webp-full': { base: CDN + '/hero-animation-v2',              ext: '.webp', label: 'webp 1920' },
-      'webp-lo':   { base: CDN + '/hero-frames/desktop-webp-1600',  ext: '.webp', label: 'webp 1600' },
-      'avif-full': { base: CDN + '/hero-frames/desktop-avif-1920',  ext: '.avif', label: 'avif 1920' },
-      'avif-lo':   { base: CDN + '/hero-frames/desktop-avif-1600',  ext: '.avif', label: 'avif 1600' }
+      'avif-full': { base: CDN + '/hero/desktop', ext: '.avif', label: 'avif 1920' },
+      'avif-lo':   { base: CDN + '/hero/tablet',  ext: '.avif', label: 'avif 1600' }
     },
     mobile: {
-      'webp-full': { base: CDN + '/hero-frames/mobile-webp-1080',   ext: '.webp', label: 'webp 1080h' },
-      'webp-lo':   { base: CDN + '/hero-frames/mobile-webp-810',    ext: '.webp', label: 'webp 810h' },
-      'avif-full': { base: CDN + '/hero-frames/mobile-avif-1080',   ext: '.avif', label: 'avif 1080h' },
-      'avif-lo':   { base: CDN + '/hero-frames/mobile-avif-810',    ext: '.avif', label: 'avif 810h' }
+      'avif-full': { base: CDN + '/hero/mobile',  ext: '.avif', label: 'avif 1080h' }
     },
     // reference: what the live site loads today
     live: {
-      'webp-full': { base: CDN.replace('@hero-v2-preview', '@main') + '/hero-animation', ext: '.webp', label: 'original webp 1920 (q90)' }
+      'webp-full': { base: CDN + '/hero-animation', ext: '.webp', label: 'original webp 1920 (q90)' }
     }
   };
-  // tablet shares the desktop sets (landscape tablets need wide frames); 1600px tier recommended
+  // viewport -> frame set: desktop uses hero/desktop (1920), tablet uses hero/tablet (1600,
+  // landscape iPads need wide frames), mobile uses hero/mobile (1080, pre-cropped)
   const VIEWPORTS = {
-    desktop: { sets: 'desktop', device: null,                defaults: { set: 'webp-full' } },
-    tablet:  { sets: 'desktop', device: { w: 834, h: 1150 }, defaults: { set: 'webp-lo' } },
-    mobile:  { sets: 'mobile',  device: { w: 390, h: 780 },  defaults: { set: 'webp-full' } }
+    desktop: { sets: 'desktop', device: null,                defaults: { set: 'avif-full' } },
+    tablet:  { sets: 'desktop', device: { w: 834, h: 1150 }, defaults: { set: 'avif-lo' } },
+    mobile:  { sets: 'mobile',  device: { w: 390, h: 780 },  defaults: { set: 'avif-full' } }
   };
 
   // ---- config from URL ----

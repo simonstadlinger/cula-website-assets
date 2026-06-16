@@ -52,10 +52,10 @@
   const cfg = {
     base: qs.get('base') ||
       (qs.has('local')
-        ? '/cula-website-frames/hero-animation-v2'
-        : 'https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@hero-v2-preview/hero-animation-v2'),
+        ? '/cula-website-frames/hero/desktop'
+        : 'https://cdn.jsdelivr.net/gh/simonstadlinger/cula-website-assets@main/hero/desktop'),
     prefix: 'frame_',
-    ext: qs.get('ext') || '.webp',
+    ext: qs.get('ext') || '.avif',
     pad: 4,
     startIndex: 1,
     frameCount: parseInt(qs.get('count') || '1417', 10),

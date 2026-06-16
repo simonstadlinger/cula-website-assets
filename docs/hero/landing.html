@@ -44,7 +44,7 @@
       linear-gradient(to right, var(--fine) 1px, transparent 1px),
       linear-gradient(to bottom, var(--fine) 1px, transparent 1px);
     background-size:var(--coarse) var(--coarse),var(--coarse) var(--coarse),var(--fineCell) var(--fineCell),var(--fineCell) var(--fineCell);
-    clip-path:inset(0 0 0% 0);will-change:clip-path;}
+    will-change:opacity,clip-path;}
 
   /* inverter line at the wipe boundary */
   .inverter{position:absolute;left:0;right:0;height:2px;background:var(--ink);
@@ -94,14 +94,6 @@
   .hub{bottom:32px;width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;
     background:#fff;box-shadow:inset 0 0 0 1px var(--hair);font-size:17px;}
   .roles{bottom:38px;display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:var(--ink);text-decoration:none;}
-
-  /* ---- collapsed (scrub) state: flat 12px boxy white bars, full original width ---- */
-  .controls.scrub .topctl{height:12px;border-radius:4px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.28);padding:0;}
-  .controls.scrub .topctl > *{opacity:0;}
-  .controls.scrub .logo:hover{height:44px;background:transparent;box-shadow:none;border-radius:0;}
-  .controls.scrub .menu:hover{height:44px;padding:5px;border-radius:16px;
-    background:#fff;box-shadow:0 1px 2px rgba(13,32,57,.07), inset 0 0 0 1px var(--hair);}
-  .controls.scrub .topctl:hover > *{opacity:1;}
 
   /* ---------- after-hero placeholder ---------- */
   .after{position:relative;z-index:2;background:var(--paper);}
@@ -185,6 +177,7 @@
   };
   const COARSE = 160, FINE = 16, MIN_MARGIN = 56;
   const forcedP = qs.has('p') ? Math.max(0, Math.min(2, parseFloat(qs.get('p')))) : null; // 1..2 = exit (QA)
+  let fx = qs.get('fx')==='wipe' ? 'wipe' : 'fade';  // transition style: 'fade' (default) or 'wipe'; press T to toggle live
 
   const urls = [];
   for (let i = 0; i < cfg.frameCount; i += Math.max(1, cfg.frameStep)) {
@@ -257,21 +250,34 @@
     claim.style.opacity = op.toFixed(3);
   }
 
-  // logo dark<->light by clipping the boundary as it sweeps through the logo (mirrors Framer Logo_Switcher)
+  // logo dark<->light: crossfade on entry (uniform video fade), clip-sweep on scrub-exit (moving boundary)
   function applyLogo(phase, wipe, exitY){
-    if(phase==='scrub'){ logoBlue.style.clipPath='inset(0 0 100% 0)'; logoWhite.style.clipPath='none'; return; }
+    if(phase==='scrub'){
+      logoBlue.style.opacity='1'; logoWhite.style.opacity='1';
+      logoBlue.style.clipPath='inset(0 0 100% 0)'; logoWhite.style.clipPath='none'; return;
+    }
     if(phase==='after'){
       // exit: black frame on top, incoming white section below — boundary sweeps bottom->top
+      logoBlue.style.opacity='1'; logoWhite.style.opacity='1';
       const above=clamp((exitY-logoBox.top)/logoBox.height,0,1);                  // logo fraction still over black
       logoWhite.style.clipPath = `inset(0 0 ${((1-above)*100).toFixed(2)}% 0)`;   // white on the dark (top) side
       logoBlue.style.clipPath  = `inset(${(above*100).toFixed(2)}% 0 0 0)`;       // blue on the white (bottom) side
       return;
     }
-    // entry: white landing above the wipe line, dark scrubber below
-    const lineY=(1-wipe)*innerHeight;
-    const above=clamp((lineY-logoBox.top)/logoBox.height,0,1);   // fraction of logo above the wipe line (white side)
-    logoBlue.style.clipPath  = `inset(0 0 ${((1-above)*100).toFixed(2)}% 0)`; // blue on the white side
-    logoWhite.style.clipPath = `inset(${(above*100).toFixed(2)}% 0 0 0)`;     // white on the dark side
+    // entry
+    if(fx==='wipe'){
+      // white landing above the wipe line, dark scrubber below — boundary sweeps through the logo
+      logoBlue.style.opacity='1'; logoWhite.style.opacity='1';
+      const lineY=(1-wipe)*innerHeight;
+      const above=clamp((lineY-logoBox.top)/logoBox.height,0,1);
+      logoBlue.style.clipPath  = `inset(0 0 ${((1-above)*100).toFixed(2)}% 0)`; // blue on the white side
+      logoWhite.style.clipPath = `inset(${(above*100).toFixed(2)}% 0 0 0)`;     // white on the dark side
+    } else {
+      // crossfade the whole logo blue->white as the video fades in (wipe = transition progress)
+      logoBlue.style.clipPath='none'; logoWhite.style.clipPath='none';
+      logoBlue.style.opacity=(1-wipe).toFixed(3);
+      logoWhite.style.opacity=wipe.toFixed(3);
+    }
   }
 
   function render(){
@@ -286,15 +292,24 @@
     const wipe=smooth(tp);
     const exitY = innerHeight*(1-ep);            // viewport Y of the black/white boundary during exit
 
-    landing.style.clipPath='inset(0 0 '+(wipe*100).toFixed(2)+'% 0)';
-    gridDark.style.opacity=(1-smooth(clamp((tp-0.6)/0.4,0,1))).toFixed(3);
-    inverter.style.top=((1-wipe)*100).toFixed(3)+'%';
-    inverter.style.opacity=(tp>0.001&&tp<0.999)?1:0;
+    if(fx==='wipe'){
+      // inverter wipe: white grid clipped away bottom->top; dark grid carries through then clears
+      landing.style.opacity='1';
+      landing.style.clipPath='inset(0 0 '+(wipe*100).toFixed(2)+'% 0)';
+      gridDark.style.opacity=(1-smooth(clamp((tp-0.6)/0.4,0,1))).toFixed(3);
+      inverter.style.top=((1-wipe)*100).toFixed(3)+'%';
+      inverter.style.opacity=(tp>0.001&&tp<0.999)?1:0;
+    } else {
+      // cross-fade: the white grid fades out as the (near-black) video frame 0 emerges beneath it
+      landing.style.clipPath='none';
+      landing.style.opacity=(1-wipe).toFixed(3);
+      gridDark.style.opacity='0'; inverter.style.opacity='0';
+    }
 
     applyClaim(tp,sp);
     applyLogo(phase,wipe,exitY);
 
-    controls.classList.toggle('scrub', phase==='scrub');
+    // top controls stay in the full landing layout throughout (no collapse/morph); only the bottom controls fade
     const botVis = phase==='after' ? 1 : (phase==='landing' ? (1-smooth(tp)) : 0);
     hub.style.opacity=botVis; roles.style.opacity=botVis;
     hub.style.pointerEvents=botVis<.2?'none':'auto'; roles.style.pointerEvents=botVis<.2?'none':'auto';
@@ -309,6 +324,17 @@
   const onScroll=()=>{ if(raf===null) raf=requestAnimationFrame(()=>{raf=null;render();}); };
   addEventListener('scroll', onScroll, {passive:true});
   addEventListener('resize', ()=>{ freezeWidths(); measure(); render(); });
+
+  // --- transition-style toggle: press T to switch wipe <-> fade live; ?fx=wipe sets initial; ?hud=0 hides badge ---
+  const fxBadge=document.createElement('div');
+  fxBadge.style.cssText='position:fixed;left:12px;bottom:12px;z-index:99;font:600 11px/1 ui-monospace,monospace;'
+    +'letter-spacing:.06em;color:#0D2039;background:rgba(255,255,255,.85);border:1px solid #E2E8F0;'
+    +'border-radius:6px;padding:6px 9px;pointer-events:none;';
+  if(qs.get('hud')==='0') fxBadge.style.display='none';
+  document.body.appendChild(fxBadge);
+  const updateBadge=()=>{ fxBadge.textContent='fx: '+fx+'  ·  press T'; };
+  updateBadge();
+  addEventListener('keydown', e=>{ if(e.key==='t'||e.key==='T'){ fx=(fx==='wipe'?'fade':'wipe'); updateBadge(); render(); } });
 
   // gate scroll lock
   const prevent=e=>e.preventDefault();
